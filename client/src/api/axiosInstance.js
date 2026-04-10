@@ -17,6 +17,19 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+api.interceptors.response.use(
+  (response) => {
+    const payload = response.data;
+
+    if (payload && typeof payload === "object" && "success" in payload && "data" in payload) {
+      response.data = payload.data;
+    }
+
+    return response;
+  },
+  (error) => Promise.reject(error)
+);
+
 export const resolveAsset = (path) => {
   if (!path) return "";
   if (path.startsWith("http")) return path;

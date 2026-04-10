@@ -3,6 +3,18 @@ const Tournament = require("../models/Tournament");
 const User = require("../models/User");
 
 const seedInitialData = async () => {
+  const usersMissingUid = await User.find({
+    $or: [{ uid: { $exists: false } }, { uid: null }, { uid: "" }]
+  }).select("_id gameId");
+
+  if (usersMissingUid.length) {
+    await Promise.all(
+      usersMissingUid.map((user) =>
+        User.updateOne({ _id: user._id }, { $set: { uid: user.gameId } })
+      )
+    );
+  }
+
   const userCount = await User.countDocuments();
 
   if (!userCount) {
@@ -20,6 +32,7 @@ const seedInitialData = async () => {
         phone: "9000000001",
         password: passwordHashes[0],
         gameId: "FF-ADMIN-001",
+        uid: "FF-ADMIN-001",
         bio: "Hosting custom rooms, clan scrims and elite events.",
         skills: ["Strategist", "Coach"],
         achievements: ["Tournament Director", "Verified Host"],
@@ -42,6 +55,7 @@ const seedInitialData = async () => {
         phone: "9000000002",
         password: passwordHashes[1],
         gameId: "FF-RAI-201",
+        uid: "FF-RAI-201",
         bio: "Fast rushes, clutch revives and close-range domination.",
         skills: ["Rusher", "Clutch"],
         achievements: ["MVP", "Top Fragger"],
@@ -64,6 +78,7 @@ const seedInitialData = async () => {
         phone: "9000000003",
         password: passwordHashes[2],
         gameId: "FF-NOVA-335",
+        uid: "FF-NOVA-335",
         bio: "Long-range specialist with calm zone control.",
         skills: ["Sniper", "IGL"],
         achievements: ["Sharp Shooter"],
@@ -85,6 +100,7 @@ const seedInitialData = async () => {
         phone: "9000000004",
         password: passwordHashes[3],
         gameId: "FF-ZONE-187",
+        uid: "FF-ZONE-187",
         bio: "Mastering rotations, end-games and objective play.",
         skills: ["Support", "Zone Control"],
         achievements: ["Rotation King"],

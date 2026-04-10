@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { TOURNAMENT_STATUS } = require("../config/constants");
 
 const tournamentSchema = new mongoose.Schema(
   {
@@ -13,7 +14,7 @@ const tournamentSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["upcoming", "live", "completed"],
+      enum: TOURNAMENT_STATUS,
       default: "upcoming"
     },
     startTime: { type: Date, required: true },

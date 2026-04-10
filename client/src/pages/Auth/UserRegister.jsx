@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useForm, Controller } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import api from "../../api/axiosInstance";
 import toast from "react-hot-toast";
 
 // Complex z-resolvers for steps
@@ -34,10 +35,17 @@ const getPasswordStrength = (pwd) => {
 
 const UserRegister = () => {
   const [step, setStep] = useState(1);
-  const [isCheckingID, setIsCheckingID] = useState(false);
-  const [idError, setIdError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [registrationSuccess, setRegistrationSuccess] = useState(false);
+
+  const [availability, setAvailability] = useState({
+    username: { checking: false, available: null, message: "" },
+    email: { checking: false, available: null, message: "" },
+    ffGameId: { checking: false, available: null, message: "" }
+  });
+
+  const debounceTimersRef = useRef({});
+  const availabilityRequestIdRef = useRef({ username: 0, email: 0, ffGameId: 0 });
   
   const [showOtpFields, setShowOtpFields] = useState(false);
   const [emailOtp, setEmailOtp] = useState(["", "", "", ""]);
@@ -67,30 +75,197 @@ const UserRegister = () => {
     },
   });
 
+  const usernameValue = watch("username");
+  const emailValue = watch("email");
+  const ffGameIdValue = watch("ffGameId");
+
+  const setFieldAvailability = (field, patch) => {
+    setAvailability((current) => ({
+      ...current,
+      [field]: {
+        ...current[field],
+        ...patch
+      }
+    }));
+  };
+
+  const checkFieldAvailability = async (field, rawValue, options = {}) => {
+    const { silent = false } = options;
+    const value = typeof rawValue === "string" ? rawValue.trim() : "";
+
+    if (!value) {
+      setFieldAvailability(field, { checking: false, available: null, message: "" });
+      return false;
+    }
+
+    if (field === "username" && value.length < 3) {
+      setFieldAvailability(field, { checking: false, available: null, message: "" });
+      return false;
+    }
+
+    if (field === "ffGameId" && value.length < 6) {
+      setFieldAvailability(field, { checking: false, available: null, message: "" });
+      return false;
+    }
+
+    if (field === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      setFieldAvailability(field, { checking: false, available: null, message: "" });
+      return false;
+    }
+
+    const requestId = (availabilityRequestIdRef.current[field] || 0) + 1;
+    availabilityRequestIdRef.current[field] = requestId;
+
+    setFieldAvailability(field, { checking: true, message: "" });
+
+    try {
+      const payload =
+        field === "ffGameId"
+          ? { gameId: value }
+          : { [field]: field === "email" ? value.toLowerCase() : value };
+
+      const { data } = await api.post("/auth/check-availability", payload);
+
+      if (requestId !== availabilityRequestIdRef.current[field]) {
+        return false;
+      }
+
+      const availableMap = {
+        username: data.usernameAvailable,
+        email: data.emailAvailable,
+        ffGameId: data.gameIdAvailable
+      };
+
+      const messageMap = {
+        username: "Username already exists",
+        email: "Email already exists",
+        ffGameId: "Game ID already exists"
+      };
+
+      const isAvailable = Boolean(availableMap[field]);
+      const message = isAvailable ? "" : messageMap[field];
+
+      setFieldAvailability(field, {
+        checking: false,
+        available: isAvailable,
+        message
+      });
+
+      if (!isAvailable && !silent) {
+        toast.error(message);
+      }
+
+      return isAvailable;
+    } catch (error) {
+      if (requestId !== availabilityRequestIdRef.current[field]) {
+        return false;
+      }
+
+      setFieldAvailability(field, {
+        checking: false,
+        available: null,
+        message: ""
+      });
+
+      return false;
+    }
+  };
+
+  const validateRequiredAvailability = async (fields) => {
+    const valueMap = {
+      username: usernameValue,
+      email: emailValue,
+      ffGameId: ffGameIdValue
+    };
+
+    const checks = await Promise.all(
+      fields.map((field) => checkFieldAvailability(field, valueMap[field], { silent: true }))
+    );
+
+    return checks.every(Boolean);
+  };
+
+  useEffect(() => {
+    const value = typeof usernameValue === "string" ? usernameValue.trim() : "";
+    clearTimeout(debounceTimersRef.current.username);
+
+    if (!value || value.length < 3 || errors.username) {
+      setFieldAvailability("username", { checking: false, available: null, message: "" });
+      return;
+    }
+
+    debounceTimersRef.current.username = setTimeout(() => {
+      checkFieldAvailability("username", value, { silent: true });
+    }, 450);
+
+    return () => clearTimeout(debounceTimersRef.current.username);
+  }, [usernameValue, errors.username]);
+
+  useEffect(() => {
+    const value = typeof ffGameIdValue === "string" ? ffGameIdValue.trim() : "";
+    clearTimeout(debounceTimersRef.current.ffGameId);
+
+    if (!value || value.length < 6 || errors.ffGameId) {
+      setFieldAvailability("ffGameId", { checking: false, available: null, message: "" });
+      return;
+    }
+
+    debounceTimersRef.current.ffGameId = setTimeout(() => {
+      checkFieldAvailability("ffGameId", value, { silent: true });
+    }, 450);
+
+    return () => clearTimeout(debounceTimersRef.current.ffGameId);
+  }, [ffGameIdValue, errors.ffGameId]);
+
+  useEffect(() => {
+    const value = typeof emailValue === "string" ? emailValue.trim() : "";
+    clearTimeout(debounceTimersRef.current.email);
+
+    if (!value || errors.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      setFieldAvailability("email", { checking: false, available: null, message: "" });
+      return;
+    }
+
+    debounceTimersRef.current.email = setTimeout(() => {
+      checkFieldAvailability("email", value, { silent: true });
+    }, 450);
+
+    return () => clearTimeout(debounceTimersRef.current.email);
+  }, [emailValue, errors.email]);
+
+  useEffect(() => () => {
+    Object.values(debounceTimersRef.current).forEach((timer) => {
+      clearTimeout(timer);
+    });
+  }, []);
+
   const nextStep = async () => {
     let valid = false;
     if (step === 1) {
       valid = await trigger(["username", "ffGameId"]);
       if (valid) {
-        setIsCheckingID(true);
-        setTimeout(() => {
-          setIsCheckingID(false);
-          // Fake validation for taken ID
-          if (watch("username") === "raistar") {
-            setIdError("Username already taken");
-            valid = false;
-          } else {
-            setIdError(null);
-            setStep(2);
-          }
-        }, 800);
-        return; // handle transition in timeout
+        const availabilityOk = await validateRequiredAvailability(["username", "ffGameId"]);
+
+        if (!availabilityOk) {
+          toast.error("Username or Game ID already exists");
+          return;
+        }
+
+        setStep(2);
+        return;
       } else {
         toast.error("Please fill username and game id correctly");
       }
     } else if (step === 2) {
       valid = await trigger(["email", "phone"]);
       if (valid) {
+        const emailAvailable = await validateRequiredAvailability(["email"]);
+
+        if (!emailAvailable) {
+          toast.error("Email already exists");
+          return;
+        }
+
         if (!showOtpFields) {
           // Show OTP fields and send OTP
           setShowOtpFields(true);
@@ -147,12 +322,14 @@ const UserRegister = () => {
 
     setIsSubmitting(true);
     try {
+      const sanitizedPhone = String(data.phone || "").replace(/\s+/g, "").trim();
+
       await authRegister({
-        username: data.username,
-        email: data.email,
-        phone: data.phone,
+        username: data.username.trim(),
+        email: data.email.trim().toLowerCase(),
+        phone: sanitizedPhone,
         password: data.password,
-        gameId: data.ffGameId,
+        gameId: data.ffGameId.trim(),
         state: "Not Specified",
         city: "Not Specified"
       });
@@ -255,26 +432,26 @@ const UserRegister = () => {
               <div className="relative group">
                 <input
                   {...register("username")}
-                  className={`w-full bg-black/40 border ${errors.username || idError ? "border-neonRed ring-1 ring-neonRed/50" : "border-white/10 focus:border-neonPurple focus:ring-1 focus:ring-neonPurple/50"} text-white rounded-xl px-4 pt-6 pb-2 outline-none transition-all duration-300 peer`}
+                  className={`w-full bg-black/40 border ${errors.username || availability.username.available === false ? "border-neonRed ring-1 ring-neonRed/50" : "border-white/10 focus:border-neonPurple focus:ring-1 focus:ring-neonPurple/50"} text-white rounded-xl px-4 pt-6 pb-2 outline-none transition-all duration-300 peer`}
                   placeholder=" "
                 />
                 <label className="absolute left-4 top-1.5 text-gray-500 text-xs transition-all duration-300 peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-neonPurple pointer-events-none">
                   Unique Username
                 </label>
-                {isCheckingID && (
+                {availability.username.checking && (
                   <span className="absolute right-3 top-4 text-xs text-gray-400 animate-pulse">
                     Checking...
                   </span>
                 )}
-                {idError && (
+                {availability.username.available === false && (
                   <span className="absolute right-3 top-4 text-xs text-neonRed font-bold">
-                    {idError}
+                    {availability.username.message}
                   </span>
                 )}
                 {!errors.username &&
-                  !idError &&
-                  watch("username").length > 2 &&
-                  !isCheckingID && (
+                  availability.username.available &&
+                  usernameValue?.trim().length > 2 &&
+                  !availability.username.checking && (
                     <span className="absolute right-3 top-4 text-neonCyan">
                       ✓
                     </span>
@@ -284,12 +461,30 @@ const UserRegister = () => {
               <div className="relative group">
                 <input
                   {...register("ffGameId")}
-                  className={`w-full bg-black/40 border ${errors.ffGameId ? "border-neonRed ring-1 ring-neonRed/50" : "border-white/10 focus:border-neonPurple focus:ring-1 focus:ring-neonPurple/50"} text-white rounded-xl px-4 pt-6 pb-2 outline-none transition-all duration-300 peer`}
+                  className={`w-full bg-black/40 border ${errors.ffGameId || availability.ffGameId.available === false ? "border-neonRed ring-1 ring-neonRed/50" : "border-white/10 focus:border-neonPurple focus:ring-1 focus:ring-neonPurple/50"} text-white rounded-xl px-4 pt-6 pb-2 outline-none transition-all duration-300 peer`}
                   placeholder=" "
                 />
                 <label className="absolute left-4 top-1.5 text-gray-500 text-xs transition-all duration-300 peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-neonPurple pointer-events-none">
                   Free Fire Game ID
                 </label>
+                {availability.ffGameId.checking && (
+                  <span className="absolute right-3 top-4 text-xs text-gray-400 animate-pulse">
+                    Checking...
+                  </span>
+                )}
+                {availability.ffGameId.available === false && (
+                  <span className="absolute right-3 top-4 text-xs text-neonRed font-bold">
+                    {availability.ffGameId.message}
+                  </span>
+                )}
+                {!errors.ffGameId &&
+                  availability.ffGameId.available &&
+                  ffGameIdValue?.trim().length > 5 &&
+                  !availability.ffGameId.checking && (
+                    <span className="absolute right-3 top-4 text-neonCyan">
+                      ✓
+                    </span>
+                  )}
               </div>
             </motion.div>
           )}
@@ -307,12 +502,30 @@ const UserRegister = () => {
                   <div className="relative group">
                     <input
                       {...register("email")}
-                      className={`w-full bg-black/40 border ${errors.email ? "border-neonRed ring-1 ring-neonRed/50" : "border-white/10 focus:border-neonPurple focus:ring-1 focus:ring-neonPurple/50"} text-white rounded-xl px-4 pt-6 pb-2 outline-none transition-all duration-300 peer`}
+                      className={`w-full bg-black/40 border ${errors.email || availability.email.available === false ? "border-neonRed ring-1 ring-neonRed/50" : "border-white/10 focus:border-neonPurple focus:ring-1 focus:ring-neonPurple/50"} text-white rounded-xl px-4 pt-6 pb-2 outline-none transition-all duration-300 peer`}
                       placeholder=" "
                     />
                     <label className="absolute left-4 top-1.5 text-gray-500 text-xs transition-all duration-300 peer-placeholder-shown:top-4 peer-placeholder-shown:text-base peer-focus:top-1.5 peer-focus:text-xs peer-focus:text-neonPurple pointer-events-none">
                       Email Configuration
                     </label>
+                    {availability.email.checking && (
+                      <span className="absolute right-3 top-4 text-xs text-gray-400 animate-pulse">
+                        Checking...
+                      </span>
+                    )}
+                    {availability.email.available === false && (
+                      <span className="absolute right-3 top-4 text-xs text-neonRed font-bold">
+                        {availability.email.message}
+                      </span>
+                    )}
+                    {!errors.email &&
+                      availability.email.available &&
+                      emailValue?.trim().length > 4 &&
+                      !availability.email.checking && (
+                        <span className="absolute right-3 top-4 text-neonCyan">
+                          ✓
+                        </span>
+                      )}
                   </div>
 
                   <div className="flex gap-2">

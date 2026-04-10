@@ -5,6 +5,8 @@ const userSchema = new mongoose.Schema({
   email: { type: String, unique: true, required: true, lowercase: true, trim: true },
   phone: { type: String, unique: true, required: true, trim: true },
   gameId: { type: String, unique: true, required: true, trim: true },
+  // Legacy field retained for older DB indexes and frontend payloads.
+  uid: { type: String, unique: true, sparse: true, trim: true },
 
   password: { type: String, required: true, minlength: 6 },
 
@@ -59,6 +61,21 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   }
+});
+
+userSchema.pre("validate", function syncLegacyUid(next) {
+  const normalizedGameId = this.gameId?.trim();
+  const normalizedUid = this.uid?.trim();
+
+  if (!normalizedGameId && normalizedUid) {
+    this.gameId = normalizedUid;
+  }
+
+  if (!normalizedUid && normalizedGameId) {
+    this.uid = normalizedGameId;
+  }
+
+  next();
 });
 
 module.exports = mongoose.model('User', userSchema);

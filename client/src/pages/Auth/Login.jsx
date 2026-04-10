@@ -53,8 +53,18 @@ const Login = () => {
   const onSubmit = async (data) => {
     setIsSubmitting(true);
     try {
+      if (loginMethod !== "password") {
+        toast.error("OTP login is not enabled yet. Please use password login.");
+        return;
+      }
+
+      if (!data.password) {
+        toast.error("Password is required.");
+        return;
+      }
+
       const payload = {
-        identifier: data.identifier,
+        identifier: data.identifier.trim(),
         password: data.password,
       };
 

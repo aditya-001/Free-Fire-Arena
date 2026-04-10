@@ -1,11 +1,12 @@
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const AppError = require("../utils/AppError");
 
 const protect = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({ message: "Not authorized" });
+    return next(new AppError("Not authorized", 401));
   }
 
   try {
@@ -14,21 +15,21 @@ const protect = async (req, res, next) => {
     req.user = await User.findById(decoded.id).select("-password");
 
     if (!req.user) {
-      return res.status(401).json({ message: "User not found" });
+      return next(new AppError("User not found", 401));
     }
 
-    next();
+    return next();
   } catch (error) {
-    return res.status(401).json({ message: "Token invalid" });
+    return next(new AppError("Token invalid", 401));
   }
 };
 
 const adminOnly = (req, res, next) => {
   if (!req.user || req.user.role !== "admin") {
-    return res.status(403).json({ message: "Admin access required" });
+    return next(new AppError("Admin access required", 403));
   }
 
-  next();
+  return next();
 };
 
 module.exports = { protect, adminOnly };

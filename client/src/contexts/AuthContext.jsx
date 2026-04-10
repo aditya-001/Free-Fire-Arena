@@ -49,6 +49,33 @@ export const AuthProvider = ({ children }) => {
     toast.success("Logged out safely");
   };
 
+  const normalizeLoginPayload = (payload = {}) => {
+    const identifier =
+      payload.identifier ||
+      payload.email ||
+      payload.username ||
+      payload.phone ||
+      payload.gameId ||
+      "";
+
+    return {
+      identifier: typeof identifier === "string" ? identifier.trim() : "",
+      password: payload.password || ""
+    };
+  };
+
+  const normalizeRegisterPayload = (payload = {}) => {
+    const gameId = payload.gameId || payload.uid || payload.ffGameId || "";
+
+    return {
+      ...payload,
+      username: payload.username?.trim() || "",
+      email: payload.email?.trim()?.toLowerCase() || "",
+      phone: payload.phone?.trim() || "",
+      gameId: typeof gameId === "string" ? gameId.trim() : ""
+    };
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -57,8 +84,10 @@ export const AuthProvider = ({ children }) => {
         loading,
         setUser,
         refreshProfile: hydrateUser,
-        login: (payload) => authAction("/auth/login", payload, "Welcome back to the arena!"),
-        register: (payload) => authAction("/auth/register", payload, "Account created successfully!"),
+        login: (payload) =>
+          authAction("/auth/login", normalizeLoginPayload(payload), "Welcome back to the arena!"),
+        register: (payload) =>
+          authAction("/auth/register", normalizeRegisterPayload(payload), "Account created successfully!"),
         adminLogin: (payload) => authAction("/auth/admin-login", payload, "ACCESS GRANTED: Command Center Active"),
         adminRegister: (payload) => authAction("/auth/admin-register", payload, "Admin Profile Indexed Successfully"),
         logout

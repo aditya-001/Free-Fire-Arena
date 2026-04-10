@@ -1,4 +1,5 @@
 const path = require("path");
+const fs = require("fs");
 const http = require("http");
 const express = require("express");
 const cors = require("cors");
@@ -14,6 +15,10 @@ const messageRoutes = require("./routes/messageRoutes");
 const configureSocket = require("./socket");
 const seedInitialData = require("./utils/seedData");
 const { errorHandler, notFound } = require("./middleware/errorMiddleware");
+const { sendSuccess } = require("./utils/apiResponse");
+const logger = require("./utils/logger");
+const { API_MESSAGES } = require("./config/constants");
+const { apiRateLimiter } = require("./middleware/rateLimiter");
 
 dotenv.config();
 
@@ -39,6 +44,21 @@ const corsOrigin = (origin, callback) => {
   callback(new Error("Not allowed by CORS"));
 };
 
+const ensureUploadFolders = () => {
+  const uploadRoot = path.join(__dirname, "uploads");
+  const requiredPaths = [
+    uploadRoot,
+    path.join(uploadRoot, "avatars"),
+    path.join(uploadRoot, "tournament")
+  ];
+
+  requiredPaths.forEach((folderPath) => {
+    if (!fs.existsSync(folderPath)) {
+      fs.mkdirSync(folderPath, { recursive: true });
+    }
+  });
+};
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -60,6 +80,7 @@ app.use(
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan("dev"));
+app.use("/api", apiRateLimiter);
 app.use((req, res, next) => {
   req.io = req.app.get("io");
   next();
@@ -73,18 +94,25 @@ app.use("/api/leaderboard", leaderboardRoutes);
 app.use("/api/messages", messageRoutes);
 
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", timestamp: new Date().toISOString() });
+  return sendSuccess(res, {
+    message: API_MESSAGES.HEALTH_OK,
+    data: {
+      status: "ok",
+      timestamp: new Date().toISOString()
+    }
+  });
 });
 
 app.use(notFound);
 app.use(errorHandler);
 
 const startServer = async () => {
+  ensureUploadFolders();
   await connectDB();
   await seedInitialData();
 
   server.listen(process.env.PORT, () => {
-    console.log(`Server running on port ${process.env.PORT}`);
+    logger.info(`Server running on port ${process.env.PORT}`);
   });
 };
 

@@ -1,9 +1,22 @@
 const path = require("path");
+const fs = require("fs");
 const multer = require("multer");
+
+const resolveUploadDirectory = (file) => {
+  const uploadRoot = path.join(__dirname, "..", "uploads");
+
+  if (file.fieldname === "profileImage" || file.fieldname === "avatar") {
+    return path.join(uploadRoot, "avatars");
+  }
+
+  return path.join(uploadRoot, "tournament");
+};
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, "..", "uploads"));
+    const destinationPath = resolveUploadDirectory(file);
+    fs.mkdirSync(destinationPath, { recursive: true });
+    cb(null, destinationPath);
   },
   filename: (req, file, cb) => {
     const extension = path.extname(file.originalname);
