@@ -1,6 +1,7 @@
 const jwt = require("jsonwebtoken");
 const logger = require("../utils/logger");
 const { registerChatEvents } = require("./events/chatEvents");
+const { registerMatchEvents } = require("./events/matchEvents");
 const { registerTournamentEvents } = require("./events/tournamentEvents");
 
 const configureSocket = (io) => {
@@ -23,6 +24,7 @@ const configureSocket = (io) => {
 
   io.on("connection", (socket) => {
     registerChatEvents(io, socket);
+    registerMatchEvents(io, socket);
     registerTournamentEvents(io, socket);
 
     socket.on("disconnect", () => {

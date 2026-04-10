@@ -1,6 +1,8 @@
 const bcrypt = require("bcryptjs");
 const Tournament = require("../models/Tournament");
 const User = require("../models/User");
+const Team = require("../models/Team");
+const Match = require("../models/Match");
 
 const seedInitialData = async () => {
   const usersMissingUid = await User.find({
@@ -141,6 +143,7 @@ const seedInitialData = async () => {
       await Tournament.insertMany([
         {
           title: "Booyah Night Showdown",
+          mode: "BR",
           game: "Free Fire",
           entryFee: 49,
           prizePool: 5000,
@@ -152,6 +155,7 @@ const seedInitialData = async () => {
         },
         {
           title: "All India Squad Clash",
+          mode: "CS",
           game: "Free Fire",
           entryFee: 99,
           prizePool: 15000,
@@ -163,6 +167,7 @@ const seedInitialData = async () => {
         },
         {
           title: "City Solo Rush",
+          mode: "BR",
           game: "Free Fire",
           entryFee: 29,
           prizePool: 2500,
@@ -174,6 +179,7 @@ const seedInitialData = async () => {
         },
         {
           title: "Weekend Knockout Finals",
+          mode: "CS",
           game: "Free Fire",
           entryFee: 59,
           prizePool: 8000,
@@ -184,6 +190,68 @@ const seedInitialData = async () => {
           createdBy: admin._id
         }
       ]);
+    }
+  }
+
+  const teamCount = await Team.countDocuments();
+  if (!teamCount) {
+    const users = await User.find({ role: "user" }).limit(6).select("_id");
+
+    if (users.length >= 2) {
+      const firstHalf = users.slice(0, Math.ceil(users.length / 2)).map((item) => item._id);
+      const secondHalf = users.slice(Math.ceil(users.length / 2)).map((item) => item._id);
+
+      await Team.insertMany([
+        {
+          name: "Alpha Predators",
+          players: firstHalf
+        },
+        {
+          name: "Blaze Reapers",
+          players: secondHalf.length ? secondHalf : firstHalf
+        }
+      ]);
+    }
+  }
+
+  const matchCount = await Match.countDocuments();
+  if (!matchCount) {
+    const tournaments = await Tournament.find({}).limit(10).select(
+      "_id mode status startTime dateTime joinedPlayers participants"
+    );
+    const teams = await Team.find({}).select("_id");
+
+    const matchesToInsert = tournaments.map((tournament, index) => {
+      const participants = Array.isArray(tournament.joinedPlayers) && tournament.joinedPlayers.length
+        ? tournament.joinedPlayers
+        : Array.isArray(tournament.participants)
+          ? tournament.participants
+          : [];
+
+      const shouldComplete = tournament.status === "completed";
+      const results = shouldComplete
+        ? participants.slice(0, 10).map((userId, rankIndex) => ({
+            user: userId,
+            teamId: teams.length ? teams[rankIndex % teams.length]._id : null,
+            kills: Math.max(1, 8 - rankIndex),
+            booyah: rankIndex === 0,
+            rank: rankIndex + 1
+          }))
+        : [];
+
+      return {
+        tournamentId: tournament._id,
+        matchNumber: 1,
+        mode: tournament.mode || "BR",
+        status: shouldComplete ? "completed" : "live",
+        startTime: tournament.startTime || tournament.dateTime || new Date(),
+        participants,
+        results
+      };
+    });
+
+    if (matchesToInsert.length) {
+      await Match.insertMany(matchesToInsert);
     }
   }
 };

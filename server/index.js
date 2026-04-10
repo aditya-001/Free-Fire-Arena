@@ -11,6 +11,8 @@ const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes");
 const tournamentRoutes = require("./routes/tournamentRoutes");
 const leaderboardRoutes = require("./routes/leaderboardRoutes");
+const matchRoutes = require("./routes/matchRoutes");
+const walletRoutes = require("./routes/walletRoutes");
 const messageRoutes = require("./routes/messageRoutes");
 const configureSocket = require("./socket");
 const seedInitialData = require("./utils/seedData");
@@ -91,6 +93,8 @@ app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/tournaments", tournamentRoutes);
 app.use("/api/leaderboard", leaderboardRoutes);
+app.use("/api/matches", matchRoutes);
+app.use("/api/wallet", walletRoutes);
 app.use("/api/messages", messageRoutes);
 
 app.get("/api/health", (req, res) => {

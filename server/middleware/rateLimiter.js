@@ -26,7 +26,13 @@ const authRateLimiter = createRateLimiter(
   "Too many auth attempts, please try again later"
 );
 
+const walletRateLimiter = createRateLimiter(
+  Number(process.env.WALLET_RATE_LIMIT_MAX || RATE_LIMIT.WALLET_MAX_REQUESTS),
+  "Too many wallet requests, please try again later"
+);
+
 module.exports = {
   apiRateLimiter,
-  authRateLimiter
+  authRateLimiter,
+  walletRateLimiter
 };

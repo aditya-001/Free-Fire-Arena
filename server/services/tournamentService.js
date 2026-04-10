@@ -1,10 +1,12 @@
 const Tournament = require("../models/Tournament");
 const User = require("../models/User");
 const AppError = require("../utils/AppError");
-const { TOURNAMENT_DEFAULTS } = require("../config/constants");
+const { TOURNAMENT_DEFAULTS, TOURNAMENT_MODES } = require("../config/constants");
+const matchService = require("./matchService");
+const walletService = require("./walletService");
 
 const TOURNAMENT_SELECT =
-  "_id title game entryFee prizePool maxPlayers joinedPlayers status startTime name dateTime participants";
+  "_id title game mode entryFee prizePool maxPlayers joinedPlayers status startTime name dateTime participants";
 const MAX_LIMIT = TOURNAMENT_DEFAULTS.MAX_QUERY_LIMIT;
 const LIVE_WINDOW_MINUTES = Number(
   process.env.TOURNAMENT_LIVE_WINDOW_MINUTES || TOURNAMENT_DEFAULTS.LIVE_WINDOW_MINUTES
@@ -43,6 +45,7 @@ const serializeTournament = (tournament, nowMs = Date.now()) => ({
   _id: tournament._id,
   title: tournament.title || tournament.name || "Tournament",
   game: tournament.game || TOURNAMENT_DEFAULTS.GAME,
+  mode: tournament.mode || "BR",
   entryFee: Number(tournament.entryFee || 0),
   prizePool: Number(tournament.prizePool || 0),
   maxPlayers: Number(tournament.maxPlayers || TOURNAMENT_DEFAULTS.MAX_PLAYERS),
@@ -110,6 +113,7 @@ const getUpcomingTournaments = async (query) => {
 const createTournament = async (payload, userId, io) => {
   const title = String(payload.title || payload.name || "").trim();
   const game = String(payload.game || TOURNAMENT_DEFAULTS.GAME).trim() || TOURNAMENT_DEFAULTS.GAME;
+  const mode = String(payload.mode || "BR").toUpperCase();
   const entryFee = Number(payload.entryFee);
   const prizePool = Number(payload.prizePool);
   const maxPlayers = Number(payload.maxPlayers ?? TOURNAMENT_DEFAULTS.MAX_PLAYERS);
@@ -118,6 +122,10 @@ const createTournament = async (payload, userId, io) => {
 
   if (!title || !Number.isFinite(entryFee) || !Number.isFinite(prizePool) || !startTime) {
     throw new AppError("title, entryFee, prizePool and startTime are required", 400);
+  }
+
+  if (!TOURNAMENT_MODES.includes(mode)) {
+    throw new AppError("mode must be BR or CS", 400);
   }
 
   if (Number.isNaN(startTime.getTime())) {
@@ -131,6 +139,7 @@ const createTournament = async (payload, userId, io) => {
   const tournament = await Tournament.create({
     title,
     game,
+    mode,
     entryFee,
     prizePool,
     maxPlayers,
@@ -138,6 +147,8 @@ const createTournament = async (payload, userId, io) => {
     status: startTime.getTime() > Date.now() ? "upcoming" : "live",
     createdBy: userId
   });
+
+  await matchService.ensurePrimaryMatchForTournament(tournament, io);
 
   await User.updateMany(
     {},
@@ -163,7 +174,7 @@ const createTournament = async (payload, userId, io) => {
 
 const joinTournament = async (tournamentId, userId, io) => {
   const tournament = await Tournament.findById(tournamentId).select(
-    "_id title name maxPlayers joinedPlayers participants status startTime"
+    "_id title name entryFee maxPlayers joinedPlayers participants status startTime"
   );
 
   if (!tournament) {
@@ -187,24 +198,46 @@ const joinTournament = async (tournamentId, userId, io) => {
     throw new AppError("Tournament is full", 400);
   }
 
-  tournament.joinedPlayers = joinedPlayers;
-  tournament.participants = participants;
-
-  tournament.joinedPlayers.push(userId);
-  if (!tournament.participants.some((participant) => participant.equals(userId))) {
-    tournament.participants.push(userId);
+  let chargeResult = null;
+  if (Number(tournament.entryFee || 0) > 0) {
+    chargeResult = await walletService.debitTournamentEntryFee({
+      userId,
+      tournament
+    });
   }
 
-  await tournament.save();
+  try {
+    tournament.joinedPlayers = joinedPlayers;
+    tournament.participants = participants;
 
-  await User.findByIdAndUpdate(userId, {
-    $push: {
-      notifications: {
-        title: "Registration confirmed",
-        body: `You joined ${tournament.title || tournament.name}. Good luck for the match.`
-      }
+    tournament.joinedPlayers.push(userId);
+    if (!tournament.participants.some((participant) => participant.equals(userId))) {
+      tournament.participants.push(userId);
     }
-  });
+
+    await tournament.save();
+    await matchService.joinUserToTournamentMatch(tournament, userId, io);
+
+    await User.findByIdAndUpdate(userId, {
+      $push: {
+        notifications: {
+          title: "Registration confirmed",
+          body: `You joined ${tournament.title || tournament.name}. Good luck for the match.`
+        }
+      }
+    });
+  } catch (error) {
+    if (chargeResult?.charged) {
+      await walletService.refundTournamentEntryFee({
+        userId,
+        amount: chargeResult.charged,
+        tournamentId: tournament._id,
+        reason: "Tournament join failed"
+      });
+    }
+
+    throw error;
+  }
 
   const serializedTournament = serializeTournament(tournament.toObject());
 

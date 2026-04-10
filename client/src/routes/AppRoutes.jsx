@@ -4,6 +4,7 @@ import HomePage from "../pages/HomePage";
 import LeaderboardPage from "../pages/LeaderboardPage";
 import ProfilePage from "../pages/ProfilePage";
 import TournamentsPage from "../pages/TournamentsPage";
+import WalletPage from "../pages/Wallet";
 import AuthWrapper from "../pages/Auth/AuthWrapper";
 import Login from "../pages/Auth/Login";
 import UserRegister from "../pages/Auth/UserRegister";
@@ -71,6 +72,14 @@ const AppRoutes = () => (
       <Route index element={<HomePage />} />
       <Route path="/tournaments" element={<TournamentsPage />} />
       <Route path="/leaderboard" element={<LeaderboardPage />} />
+      <Route
+        path="/wallet"
+        element={
+          <ProtectedRoute>
+            <WalletPage />
+          </ProtectedRoute>
+        }
+      />
       <Route
         path="/profile"
         element={

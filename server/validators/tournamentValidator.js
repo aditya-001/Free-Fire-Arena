@@ -32,6 +32,7 @@ const runParamsValidation = (schema) => (req, res, next) => {
 const createTournamentSchema = Joi.object({
   title: Joi.string().min(3),
   name: Joi.string().min(3),
+  mode: Joi.string().valid("BR", "CS").uppercase(),
   game: Joi.string().min(2),
   entryFee: Joi.number().min(0).required(),
   prizePool: Joi.number().min(0).required(),
@@ -49,7 +50,12 @@ const joinTournamentParamsSchema = Joi.object({
   id: Joi.string().length(24).hex().required()
 });
 
+const joinTournamentBodySchema = Joi.object({
+  tournamentId: Joi.string().length(24).hex().required()
+});
+
 module.exports = {
   validateCreateTournament: runBodyValidation(createTournamentSchema),
-  validateJoinTournament: runParamsValidation(joinTournamentParamsSchema)
+  validateJoinTournament: runParamsValidation(joinTournamentParamsSchema),
+  validateJoinTournamentBody: runBodyValidation(joinTournamentBodySchema)
 };

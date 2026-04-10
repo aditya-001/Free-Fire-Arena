@@ -1,5 +1,20 @@
 const mongoose = require('mongoose');
 
+const userStatsSchema = new mongoose.Schema(
+  {
+    totalKills: { type: Number, default: 0, min: 0, index: true },
+    totalBooyah: { type: Number, default: 0, min: 0 },
+    matchesPlayed: { type: Number, default: 0, min: 0 },
+
+    // Legacy keys retained for existing frontend payload compatibility.
+    kills: { type: Number, default: 0, min: 0 },
+    wins: { type: Number, default: 0, min: 0 },
+    matches: { type: Number, default: 0, min: 0 },
+    points: { type: Number, default: 0, min: 0, index: true }
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema({
   username: { type: String, unique: true, required: true, trim: true, minlength: 3 },
   email: { type: String, unique: true, required: true, lowercase: true, trim: true },
@@ -21,10 +36,22 @@ const userSchema = new mongoose.Schema({
     default: 0
   },
 
+  walletCreditRefs: {
+    type: [String],
+    default: [],
+    select: false
+  },
+
+  walletLock: {
+    isLocked: { type: Boolean, default: false },
+    lockRef: { type: String, default: null },
+    reason: { type: String, default: null },
+    lockedAt: { type: Date, default: null }
+  },
+
   stats: {
-    matchesPlayed: { type: Number, default: 0 },
-    wins: { type: Number, default: 0 },
-    kills: { type: Number, default: 0 }
+    type: userStatsSchema,
+    default: () => ({})
   },
 
   isVerified: {
@@ -63,6 +90,8 @@ const userSchema = new mongoose.Schema({
   }
 });
 
+userSchema.index({ "walletLock.isLocked": 1, "walletLock.lockedAt": 1 });
+
 userSchema.pre("validate", function syncLegacyUid(next) {
   const normalizedGameId = this.gameId?.trim();
   const normalizedUid = this.uid?.trim();
@@ -75,6 +104,31 @@ userSchema.pre("validate", function syncLegacyUid(next) {
     this.uid = normalizedGameId;
   }
 
+  next();
+});
+
+userSchema.pre("validate", function syncStats(next) {
+  const stats = this.stats || {};
+
+  const safeNumber = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+  };
+
+  const totalKills = safeNumber(stats.totalKills || stats.kills);
+  const totalBooyah = safeNumber(stats.totalBooyah || stats.wins);
+  const matchesPlayed = safeNumber(stats.matchesPlayed || stats.matches);
+
+  stats.totalKills = totalKills;
+  stats.totalBooyah = totalBooyah;
+  stats.matchesPlayed = matchesPlayed;
+
+  stats.kills = totalKills;
+  stats.wins = totalBooyah;
+  stats.matches = matchesPlayed;
+  stats.points = totalKills * 2 + totalBooyah * 10;
+
+  this.stats = stats;
   next();
 });
 

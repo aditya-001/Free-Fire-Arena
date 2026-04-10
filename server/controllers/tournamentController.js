@@ -63,10 +63,23 @@ const joinTournament = async (req, res, next) => {
   }
 };
 
+const joinTournamentByBody = async (req, res, next) => {
+  try {
+    const tournament = await tournamentService.joinTournament(req.body.tournamentId, req.user._id, req.io);
+    return sendSuccess(res, {
+      message: API_MESSAGES.TOURNAMENT_JOINED,
+      data: tournament
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   getTournaments,
   getLiveTournaments,
   getUpcomingTournaments,
   createTournament,
-  joinTournament
+  joinTournament,
+  joinTournamentByBody
 };

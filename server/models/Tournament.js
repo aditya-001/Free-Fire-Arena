@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const { TOURNAMENT_STATUS } = require("../config/constants");
+const { TOURNAMENT_STATUS, TOURNAMENT_MODES } = require("../config/constants");
 
 const tournamentSchema = new mongoose.Schema(
   {
@@ -20,7 +20,13 @@ const tournamentSchema = new mongoose.Schema(
     startTime: { type: Date, required: true },
 
     map: String,
-    mode: String,
+    mode: {
+      type: String,
+      enum: TOURNAMENT_MODES,
+      default: "BR",
+      uppercase: true,
+      trim: true
+    },
     roomId: String,
     roomPassword: String,
     results: [
@@ -63,6 +69,7 @@ tournamentSchema.pre("validate", function syncLegacyAndNewFields(next) {
 });
 
 tournamentSchema.index({ startTime: 1, status: 1 });
+tournamentSchema.index({ mode: 1, status: 1, startTime: -1 });
 tournamentSchema.index({ game: 1, startTime: 1 });
 
 module.exports = mongoose.model("Tournament", tournamentSchema);

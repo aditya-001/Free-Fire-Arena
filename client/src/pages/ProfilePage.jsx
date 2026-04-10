@@ -116,11 +116,11 @@ const ProfilePage = () => {
   };
 
   const handleAddMoney = () => {
-    toast("Wallet top-up flow will open here", { icon: "💰" });
+    navigate("/wallet");
   };
 
   const handleWithdraw = () => {
-    toast("Withdraw flow will open here", { icon: "🏧" });
+    navigate("/wallet");
   };
 
   const handleViewTournament = () => {
