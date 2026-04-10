@@ -18,6 +18,10 @@ const protect = async (req, res, next) => {
       return next(new AppError("User not found", 401));
     }
 
+    if (req.user.isBanned && req.user.role !== "admin") {
+      return next(new AppError("Account is banned. Contact support.", 403));
+    }
+
     return next();
   } catch (error) {
     return next(new AppError("Token invalid", 401));

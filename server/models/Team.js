@@ -12,6 +12,13 @@ const modeStatsSchema = new mongoose.Schema(
 
 const teamSchema = new mongoose.Schema(
   {
+    teamId: {
+      type: String,
+      unique: true,
+      trim: true,
+      uppercase: true,
+      index: true
+    },
     name: { type: String, required: true, unique: true, trim: true, minlength: 2 },
     players: {
       type: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
@@ -31,7 +38,16 @@ const teamSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+teamSchema.pre("validate", function ensureTeamId(next) {
+  if (!this.teamId) {
+    this.teamId = `TEAM-${String(this._id).slice(-6).toUpperCase()}`;
+  }
+
+  next();
+});
+
 teamSchema.index({ players: 1 });
+teamSchema.index({ teamId: 1 }, { unique: true });
 teamSchema.index({ "stats.totalBooyah": -1, "stats.totalKills": -1 });
 teamSchema.index({ "stats.totalWins": -1, "stats.totalKills": -1 });
 

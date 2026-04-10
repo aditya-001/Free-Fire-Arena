@@ -58,8 +58,28 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
+}
+
+select {
+  color: var(--text);
+  color-scheme: dark;
+}
+
+select option {
+  color: #e2e8f0;
+  background: #111827;
+}
+
+[data-theme="light"] select {
+  color-scheme: light;
+}
+
+[data-theme="light"] select option {
+  color: #0f172a;
+  background: #ffffff;
 }
 
 button {

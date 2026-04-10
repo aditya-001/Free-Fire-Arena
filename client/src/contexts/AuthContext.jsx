@@ -88,7 +88,7 @@ export const AuthProvider = ({ children }) => {
           authAction("/auth/login", normalizeLoginPayload(payload), "Welcome back to the arena!"),
         register: (payload) =>
           authAction("/auth/register", normalizeRegisterPayload(payload), "Account created successfully!"),
-        adminLogin: (payload) => authAction("/auth/admin-login", payload, "ACCESS GRANTED: Command Center Active"),
+        adminLogin: (payload) => authAction("/admin/login", payload, "ACCESS GRANTED: Command Center Active"),
         adminRegister: (payload) => authAction("/auth/admin-register", payload, "Admin Profile Indexed Successfully"),
         logout
       }}

@@ -71,5 +71,7 @@ tournamentSchema.pre("validate", function syncLegacyAndNewFields(next) {
 tournamentSchema.index({ startTime: 1, status: 1 });
 tournamentSchema.index({ mode: 1, status: 1, startTime: -1 });
 tournamentSchema.index({ game: 1, startTime: 1 });
+tournamentSchema.index({ title: 1, createdAt: -1 });
+tournamentSchema.index({ name: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Tournament", tournamentSchema);

@@ -73,10 +73,13 @@ const getLeaderboard = async ({ scope = "india", state, city, limit = 25 }) => {
 
 const getMatchLeaderboard = async (matchId) => {
   const match = await Match.findById(matchId)
-    .select("_id tournamentId matchNumber mode status startTime results")
+    .select("_id tournamentId matchNumber mode status startTime selectedTeams qualifiedTeams results")
     .populate({ path: "tournamentId", select: "title" })
+    .populate({ path: "selectedTeams", select: "teamId name" })
+    .populate({ path: "qualifiedTeams", select: "teamId name" })
     .populate({ path: "results.user", select: "username gameId uid" })
-    .populate({ path: "results.teamId", select: "name" })
+    .populate({ path: "results.teamId", select: "teamId name" })
+    .populate({ path: "results.players.userId", select: "username gameId uid" })
     .lean();
 
   if (!match) {
@@ -86,18 +89,30 @@ const getMatchLeaderboard = async (matchId) => {
   const rows = [...(match.results || [])]
     .sort((a, b) => {
       if (a.rank !== b.rank) return a.rank - b.rank;
-      return (b.kills || 0) - (a.kills || 0);
+      return Number(b.totalKills ?? b.kills ?? 0) - Number(a.totalKills ?? a.kills ?? 0);
     })
-    .map((result, index) => ({
-      rank: result.rank || index + 1,
-      player: result.user?.username || "Unknown Player",
-      playerId: result.user?._id || null,
-      gameId: result.user?.gameId || result.user?.uid || null,
-      team: result.teamId?.name || null,
-      teamId: result.teamId?._id || null,
-      kills: Number(result.kills || 0),
-      booyah: Boolean(result.booyah)
-    }));
+    .map((result, index) => {
+      const players = Array.isArray(result.players) && result.players.length
+        ? result.players
+        : result.user
+          ? [{ userId: result.user, kills: result.kills || 0 }]
+          : [];
+
+      return {
+        rank: result.rank || index + 1,
+        team: result.teamId?.name || null,
+        teamId: result.teamId?._id || result.teamId || null,
+        teamCode: result.teamId?.teamId || null,
+        totalKills: Number(result.totalKills ?? result.kills ?? 0),
+        booyah: Boolean(result.booyah),
+        players: players.map((player) => ({
+          playerId: player.userId?._id || player.userId || null,
+          player: player.userId?.username || "Unknown Player",
+          gameId: player.userId?.gameId || player.userId?.uid || null,
+          kills: Number(player.kills || 0)
+        }))
+      };
+    });
 
   return {
     matchId: match._id,
@@ -107,6 +122,8 @@ const getMatchLeaderboard = async (matchId) => {
     mode: match.mode,
     status: match.status,
     startTime: match.startTime,
+    selectedTeamsCount: Array.isArray(match.selectedTeams) ? match.selectedTeams.length : 0,
+    qualifiedTeamsCount: Array.isArray(match.qualifiedTeams) ? match.qualifiedTeams.length : 0,
     rows
   };
 };

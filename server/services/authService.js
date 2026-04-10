@@ -152,6 +152,10 @@ const loginUser = async (payload) => {
     throw new AppError("Invalid credentials", 401);
   }
 
+  if (user.isBanned) {
+    throw new AppError("Account is banned. Contact support.", 403);
+  }
+
   const passwordMatch = await bcrypt.compare(password, user.password);
 
   if (!passwordMatch) {
@@ -228,6 +232,10 @@ const adminLogin = async (payload) => {
 
   if (!admin) {
     throw new AppError("UNAUTHORIZED: Admin not found", 401);
+  }
+
+  if (admin.isBanned) {
+    throw new AppError("UNAUTHORIZED: Admin account is disabled", 403);
   }
 
   const passwordMatch = await bcrypt.compare(password, admin.password);

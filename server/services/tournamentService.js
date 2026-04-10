@@ -70,6 +70,15 @@ const fetchTournamentList = async ({ filter = {}, sort = { startTime: 1 }, limit
   return tournaments.map((tournament) => serializeTournament(tournament, nowMs));
 };
 
+const buildAtomicJoinFilter = (tournamentId, userId) => ({
+  _id: tournamentId,
+  status: { $ne: "completed" },
+  joinedPlayers: { $ne: userId },
+  $expr: {
+    $lt: [{ $size: { $ifNull: ["$joinedPlayers", []] } }, "$maxPlayers"]
+  }
+});
+
 const getTournaments = async (query) => {
   const limit = parseLimit(query?.limit);
   return fetchTournamentList({ limit });
@@ -187,7 +196,6 @@ const joinTournament = async (tournamentId, userId, io) => {
   }
 
   const joinedPlayers = Array.isArray(tournament.joinedPlayers) ? tournament.joinedPlayers : [];
-  const participants = Array.isArray(tournament.participants) ? tournament.participants : [];
 
   const alreadyJoined = joinedPlayers.some((participant) => participant.equals(userId));
   if (alreadyJoined) {
@@ -199,7 +207,8 @@ const joinTournament = async (tournamentId, userId, io) => {
   }
 
   let chargeResult = null;
-  if (Number(tournament.entryFee || 0) > 0) {
+  const entryFee = Number(tournament.entryFee || 0);
+  if (entryFee > 0) {
     chargeResult = await walletService.debitTournamentEntryFee({
       userId,
       tournament
@@ -207,16 +216,50 @@ const joinTournament = async (tournamentId, userId, io) => {
   }
 
   try {
-    tournament.joinedPlayers = joinedPlayers;
-    tournament.participants = participants;
+    const updatedTournament = await Tournament.findOneAndUpdate(
+      buildAtomicJoinFilter(tournament._id, userId),
+      {
+        $addToSet: {
+          joinedPlayers: userId,
+          participants: userId
+        }
+      },
+      {
+        new: true,
+        select: "_id title name entryFee maxPlayers joinedPlayers participants status startTime"
+      }
+    );
 
-    tournament.joinedPlayers.push(userId);
-    if (!tournament.participants.some((participant) => participant.equals(userId))) {
-      tournament.participants.push(userId);
+    if (!updatedTournament) {
+      const latestTournament = await Tournament.findById(tournament._id).select(
+        "_id maxPlayers joinedPlayers status startTime"
+      );
+
+      if (!latestTournament) {
+        throw new AppError("Tournament not found", 404);
+      }
+
+      const latestStatus = resolveTournamentStatus(latestTournament.toObject());
+      if (latestStatus === "completed") {
+        throw new AppError("Tournament is already completed", 400);
+      }
+
+      const latestJoined = Array.isArray(latestTournament.joinedPlayers)
+        ? latestTournament.joinedPlayers
+        : [];
+
+      if (latestJoined.some((participant) => participant.equals(userId))) {
+        throw new AppError("You have already joined this tournament", 400);
+      }
+
+      if (latestJoined.length >= latestTournament.maxPlayers) {
+        throw new AppError("Tournament is full", 400);
+      }
+
+      throw new AppError("Tournament join could not be completed", 409);
     }
 
-    await tournament.save();
-    await matchService.joinUserToTournamentMatch(tournament, userId, io);
+    await matchService.joinUserToTournamentMatch(updatedTournament, userId, io);
 
     await User.findByIdAndUpdate(userId, {
       $push: {
@@ -226,6 +269,16 @@ const joinTournament = async (tournamentId, userId, io) => {
         }
       }
     });
+
+    const serializedTournament = serializeTournament(updatedTournament.toObject());
+
+    io?.emit("tournament_update", {
+      type: "joined",
+      tournament: serializedTournament,
+      playerId: userId
+    });
+
+    return serializedTournament;
   } catch (error) {
     if (chargeResult?.charged) {
       await walletService.refundTournamentEntryFee({
@@ -238,16 +291,6 @@ const joinTournament = async (tournamentId, userId, io) => {
 
     throw error;
   }
-
-  const serializedTournament = serializeTournament(tournament.toObject());
-
-  io?.emit("tournament_update", {
-    type: "joined",
-    tournament: serializedTournament,
-    playerId: userId
-  });
-
-  return serializedTournament;
 };
 
 module.exports = {

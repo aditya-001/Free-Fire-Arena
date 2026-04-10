@@ -49,7 +49,7 @@ const AdminRegister = () => {
         ...data,
         adminKey: key
       });
-      navigate("/tournaments");
+      navigate("/admin/dashboard");
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to register admin");
     } finally {

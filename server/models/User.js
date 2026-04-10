@@ -31,6 +31,29 @@ const userSchema = new mongoose.Schema({
     default: 'user'
   },
 
+  isBanned: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
+
+  bannedAt: {
+    type: Date,
+    default: null
+  },
+
+  bannedReason: {
+    type: String,
+    default: null,
+    trim: true
+  },
+
+  bannedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  },
+
   walletBalance: {
     type: Number,
     default: 0
@@ -91,6 +114,8 @@ const userSchema = new mongoose.Schema({
 });
 
 userSchema.index({ "walletLock.isLocked": 1, "walletLock.lockedAt": 1 });
+userSchema.index({ role: 1, createdAt: -1 });
+userSchema.index({ role: 1, isBanned: 1, createdAt: -1 });
 
 userSchema.pre("validate", function syncLegacyUid(next) {
   const normalizedGameId = this.gameId?.trim();

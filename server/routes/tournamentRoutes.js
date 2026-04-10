@@ -13,6 +13,7 @@ const {
   validateJoinTournament,
   validateJoinTournamentBody
 } = require("../validators/tournamentValidator");
+const { userActionRateLimiter } = require("../middleware/rateLimiter");
 
 const router = express.Router();
 
@@ -20,7 +21,7 @@ router.get("/", getTournaments);
 router.get("/live", getLiveTournaments);
 router.get("/upcoming", getUpcomingTournaments);
 router.post("/", protect, adminOnly, validateCreateTournament, createTournament);
-router.post("/join", protect, validateJoinTournamentBody, joinTournamentByBody);
-router.post("/:id/join", protect, validateJoinTournament, joinTournament);
+router.post("/join", protect, userActionRateLimiter, validateJoinTournamentBody, joinTournamentByBody);
+router.post("/:id/join", protect, userActionRateLimiter, validateJoinTournament, joinTournament);
 
 module.exports = router;

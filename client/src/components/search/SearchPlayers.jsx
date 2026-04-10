@@ -1,5 +1,5 @@
 import { Search, UserPlus } from "lucide-react";
-import { resolveAsset } from "../api/axiosInstance";
+import { resolveAsset } from "../../api/axiosInstance";
 
 const SearchPlayers = ({
   searchTerm,
@@ -31,6 +31,7 @@ const SearchPlayers = ({
       {players.map((player) => {
         const isCurrentUser = player._id === currentUserId;
         const isFollowing = followingIds.includes(player._id);
+        const locationLabel = [player.location?.city, player.location?.state].filter(Boolean).join(", ");
 
         return (
           <article key={player._id} className="player-card">
@@ -42,10 +43,8 @@ const SearchPlayers = ({
               )}
               <div>
                 <strong>{player.username}</strong>
-                <p>{player.uid}</p>
-                <span>
-                  {player.location?.city}, {player.location?.state}
-                </span>
+                <p>{player.uid || player.gameId || "NO-ID"}</p>
+                <span>{locationLabel || "Arena"}</span>
               </div>
             </div>
 

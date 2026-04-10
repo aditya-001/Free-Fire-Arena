@@ -1,6 +1,6 @@
 import { SendHorizonal } from "lucide-react";
-import { resolveAsset } from "../api/axiosInstance";
-import { formatTimeOnly } from "../utils/formatters";
+import { resolveAsset } from "../../api/axiosInstance";
+import { formatTimeOnly } from "../../utils/formatters";
 
 const ChatPanel = ({
   selectedUser,

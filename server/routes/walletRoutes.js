@@ -1,6 +1,6 @@
 const express = require("express");
 const { protect, adminOnly } = require("../middleware/authMiddleware");
-const { walletRateLimiter } = require("../middleware/rateLimiter");
+const { walletRateLimiter, userActionRateLimiter } = require("../middleware/rateLimiter");
 const {
   createOrder,
   verifyPayment,
@@ -30,12 +30,13 @@ router.get("/balance", getWalletBalance);
 router.get("/history", validateWalletHistoryQuery, getWalletHistory);
 router.post("/create-order", validateCreateOrder, createOrder);
 router.post("/verify-payment", validateVerifyPayment, verifyPayment);
-router.post("/withdraw", validateWithdraw, requestWithdraw);
+router.post("/withdraw", userActionRateLimiter, validateWithdraw, requestWithdraw);
 
 router.get("/admin/transactions", adminOnly, validateAdminHistoryQuery, getAdminTransactions);
 router.post(
   "/admin/withdrawals/:transactionId/approve",
   adminOnly,
+  userActionRateLimiter,
   validateTransactionParams,
   validateAdminWithdrawDecision,
   approveWithdraw
@@ -43,6 +44,7 @@ router.post(
 router.post(
   "/admin/withdrawals/:transactionId/reject",
   adminOnly,
+  userActionRateLimiter,
   validateTransactionParams,
   validateAdminWithdrawDecision,
   rejectWithdraw

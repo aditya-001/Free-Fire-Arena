@@ -11,6 +11,7 @@ const userService = {
   searchPlayers: (query) => api.get("/users/search", { params: { q: query } }),
   getUserById: (userId) => api.get(`/users/${userId}`),
   toggleFollow: (userId) => api.post(`/users/${userId}/follow`),
+  getConversation: (userId) => api.get(`/messages/${userId}`),
   getNotifications: () => api.get("/users/me/notifications"),
   markNotificationsRead: () => api.patch("/users/me/notifications")
 };

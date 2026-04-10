@@ -14,6 +14,7 @@ const leaderboardRoutes = require("./routes/leaderboardRoutes");
 const matchRoutes = require("./routes/matchRoutes");
 const walletRoutes = require("./routes/walletRoutes");
 const messageRoutes = require("./routes/messageRoutes");
+const adminRoutes = require("./routes/adminRoutes");
 const configureSocket = require("./socket");
 const seedInitialData = require("./utils/seedData");
 const { errorHandler, notFound } = require("./middleware/errorMiddleware");
@@ -96,6 +97,7 @@ app.use("/api/leaderboard", leaderboardRoutes);
 app.use("/api/matches", matchRoutes);
 app.use("/api/wallet", walletRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api/admin", adminRoutes);
 
 app.get("/api/health", (req, res) => {
   return sendSuccess(res, {
