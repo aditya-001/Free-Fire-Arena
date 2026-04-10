@@ -18,6 +18,10 @@ const EditResult = () => {
   const [loading, setLoading] = useState(true);
   const [loadingMatch, setLoadingMatch] = useState(false);
   const [saving, setSaving] = useState(false);
+  const getMatchLabel = (match) =>
+    match?.bracket?.roundLabel
+      ? `${match.bracket.roundLabel} ${match.bracket.matchOrder || ""}`.trim()
+      : `Match #${match.matchNumber}`;
 
   const fetchMatches = async () => {
     setLoading(true);
@@ -180,7 +184,7 @@ const EditResult = () => {
           <option value="">Select match to edit</option>
           {matches.map((match) => (
             <option key={match._id} value={match._id}>
-              Match #{match.matchNumber} - {match.tournamentTitle || "Tournament"} ({match.status})
+              {getMatchLabel(match)} - {match.tournamentTitle || "Tournament"} ({match.status})
             </option>
           ))}
         </select>

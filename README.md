@@ -12,7 +12,7 @@ A full-stack Free Fire tournament platform built with React, Express, MongoDB, S
 - Profile dashboard with image upload, bio, UID, skills and achievements
 - Follow/unfollow, player search, notifications and match history
 - Private real-time chat with Socket.IO
-- MongoDB models with seeded demo users and tournaments
+- MongoDB models with production-ready auth and tournament workflows
 
 ## Tech Stack
 
@@ -44,21 +44,19 @@ server/
 npm install
 ```
 
-3. Create backend env file:
+1. Create backend env file:
 
 ```bash
 cp server/.env.example server/.env
 ```
 
-4. Create frontend env file:
+1. Create frontend env file:
 
 ```bash
 cp client/.env.example client/.env
 ```
 
-5. Update secrets or URLs inside those files if needed.
-
-If local MongoDB is not installed, the backend now falls back to an in-memory MongoDB instance in development mode so the project can still start.
+1. Update secrets or URLs inside those files if needed.
 
 ## Run The App
 
@@ -98,13 +96,14 @@ npm start
 - Backend API: `http://localhost:5000/api`
 - Uploaded images: `http://localhost:5000/uploads/...`
 
-## Seeded Demo Accounts
+## Initial Admin Setup
 
-- Admin: `admin@freefire.gg` / `admin123`
-- Player: `raistar@freefire.gg` / `player123`
+1. Open `http://localhost:5173/auth/admin-register`.
+2. Use the value from `ADMIN_SECRET_KEY` in `server/.env`.
+3. Create your first admin account credentials.
 
 ## Notes
 
-- The backend seeds sample users, notifications and tournaments on first run when the database is empty.
+- The backend does not auto-create demo users, tournaments, or match data.
 - Profile image uploads are stored in `server/uploads`.
 - State and City leaderboard filters use the logged-in user's saved location.

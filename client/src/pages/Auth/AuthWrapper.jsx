@@ -74,7 +74,7 @@ const AuthWrapper = ({ children, illustration }) => {
           </div>
 
           <div className="z-10 pb-4 text-xs text-gray-500">
-            Free Fire Esports Platform © {new Date().getFullYear()}
+            EsportWeb Arena © {new Date().getFullYear()}
           </div>
         </div>
 

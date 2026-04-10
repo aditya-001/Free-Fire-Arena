@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { Bell, LogOut, Menu, MoonStar, SunMedium, Trophy, User } from "lucide-react";
+import { Bell, LogOut, Menu, MoonStar, SunMedium, User } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
+import brandLogo from "../assets/Logo.png";
 
 const navLinkClass = ({ isActive }) => `nav-link ${isActive ? "nav-link--active" : ""}`;
 
@@ -16,11 +17,11 @@ const Navbar = () => {
     <header className="navbar">
       <div className="brand-mark" onClick={() => navigate("/")}>
         <div className="brand-icon">
-          <Trophy size={18} />
+          <img src={brandLogo} alt="EsportWeb Arena logo" />
         </div>
         <div>
-          <p className="brand-kicker">Arena</p>
-          <h1>Free Fire</h1>
+          <p className="brand-kicker">Esports</p>
+          <h1>EsportWeb Arena</h1>
         </div>
       </div>
 

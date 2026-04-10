@@ -1,10 +1,12 @@
 const mongoose = require("mongoose");
 const Tournament = require("../models/Tournament");
+const TournamentRegistration = require("../models/TournamentRegistration");
 const Match = require("../models/Match");
 const Team = require("../models/Team");
 const User = require("../models/User");
 const Transaction = require("../models/Transaction");
 const tournamentService = require("./tournamentService");
+const bracketService = require("./bracketService");
 const walletService = require("./walletService");
 const authService = require("./authService");
 const leaderboardService = require("./leaderboardService");
@@ -17,6 +19,18 @@ const MAX_LIMIT = 100;
 const HIGH_WITHDRAWAL_AMOUNT = Number(process.env.FRAUD_WITHDRAWAL_AMOUNT || 5000);
 const FAILED_TXN_FLAG_COUNT = Number(process.env.FRAUD_FAILED_TXN_COUNT || 3);
 const RAPID_JOIN_FLAG_COUNT = Number(process.env.FRAUD_JOIN_COUNT || 5);
+const BR_RANK_POINTS = Object.freeze({
+  1: 12,
+  2: 9,
+  3: 8,
+  4: 7,
+  5: 6,
+  6: 5,
+  7: 4,
+  8: 3,
+  9: 2,
+  10: 1
+});
 
 const parsePagination = (query = {}) => {
   const pageRaw = Number.parseInt(query.page, 10);
@@ -55,6 +69,15 @@ const buildRegex = (value) => {
   if (!safe) return null;
   return new RegExp(safe, "i");
 };
+
+const getBrRankPoints = (rank) => {
+  const safeRank = Number.parseInt(rank, 10);
+  if (!Number.isFinite(safeRank) || safeRank < 1) return 0;
+  return BR_RANK_POINTS[safeRank] || 0;
+};
+
+const getBrTeamPoints = ({ totalKills, rank }) =>
+  Math.max(0, Number(totalKills || 0)) + getBrRankPoints(rank);
 
 const toObjectId = (value, fieldName) => {
   if (!value) {
@@ -125,23 +148,189 @@ const mapTeam = (team) => {
   };
 };
 
-const mapTournament = (tournament) => ({
-  _id: tournament._id,
-  title: tournament.title || tournament.name,
-  mode: tournament.mode,
-  entryFee: Number(tournament.entryFee || 0),
-  prizePool: Number(tournament.prizePool || 0),
-  maxPlayers: Number(tournament.maxPlayers || 0),
-  joinedPlayersCount: Array.isArray(tournament.joinedPlayers)
+const mapBracketSummary = (match) => {
+  if (!match?.bracket?.enabled) {
+    return null;
+  }
+
+  return {
+    enabled: true,
+    round: match.bracket.round || null,
+    roundLabel: match.bracket.roundLabel || null,
+    roundOrder: Number(match.bracket.roundOrder || 0),
+    matchOrder: Number(match.bracket.matchOrder || 0),
+    winnerTeamId: match.bracket.winnerTeamId?._id || match.bracket.winnerTeamId || null
+  };
+};
+
+const mapTournament = (tournament) => {
+  const joinedPlayersCount = Array.isArray(tournament.joinedPlayers)
     ? tournament.joinedPlayers.length
     : Array.isArray(tournament.participants)
       ? tournament.participants.length
-      : 0,
-  status: tournament.status,
-  startTime: tournament.startTime || tournament.dateTime,
-  createdAt: tournament.createdAt,
-  updatedAt: tournament.updatedAt
-});
+      : 0;
+
+  const maxSlots = Number(tournament.maxSlots || tournament.maxTeams || tournament.maxPlayers || 0);
+  const filledSlots = Math.max(Number(tournament.filledSlots || 0), joinedPlayersCount);
+  const percentage = maxSlots > 0 ? Math.min(100, Math.round((filledSlots / maxSlots) * 100)) : 0;
+
+  return {
+    _id: tournament._id,
+    title: tournament.title || tournament.name,
+    mode: tournament.mode,
+    type: tournament.type || "squad",
+    entryFee: Number(tournament.entryFee || 0),
+    prizePool: Number(tournament.prizePool || 0),
+    maxTeams: Number(tournament.maxTeams || maxSlots || 0),
+    playersPerTeam: Number(tournament.playersPerTeam || 0),
+    maxPlayers: Number(tournament.maxPlayers || 0),
+    maxSlots,
+    filledSlots,
+    percentage,
+    joinedPlayersCount,
+    status: tournament.status,
+    isRegistrationClosed: Boolean(tournament.isRegistrationClosed),
+    startTime: tournament.startTime || tournament.dateTime,
+    registrationStartTime: tournament.registrationStartTime || null,
+    registrationEndTime:
+      tournament.registrationEndTime || tournament.startTime || tournament.dateTime || null,
+    createdAt: tournament.createdAt,
+    updatedAt: tournament.updatedAt
+  };
+};
+
+const mapRegistration = (registration) => {
+  const user = registration?.userId;
+  const approvedTeam = registration?.approvedTeamId;
+
+  return {
+    _id: registration?._id || null,
+    tournamentId: registration?.tournamentId || null,
+    user: {
+      _id: user?._id || user || null,
+      username: user?.username || null,
+      gameId: user?.gameId || user?.uid || null,
+      email: user?.email || null
+    },
+    joinType: registration?.joinType || null,
+    teamId: registration?.teamId || null,
+    teamName: registration?.teamName || null,
+    teamLeaderGameId: registration?.teamLeaderGameId || null,
+    players: Array.isArray(registration?.players) ? registration.players : [],
+    soloGameId: registration?.soloGameId || null,
+    banner: registration?.banner || null,
+    paymentStatus: registration?.status || "pending",
+    amount: Number(registration?.amount || 0),
+    slotNumber: registration?.slotNumber || null,
+    approvalStatus: registration?.approvalStatus || "pending",
+    approvalNote: registration?.approvalNote || null,
+    approvedAt: registration?.approvedAt || null,
+    approvedBy: registration?.approvedBy || null,
+    approvedTeam: approvedTeam
+      ? {
+          _id: approvedTeam._id || approvedTeam,
+          teamId: approvedTeam.teamId || null,
+          teamName: approvedTeam.name || approvedTeam.teamName || null
+        }
+      : null,
+    createdAt: registration?.createdAt || null,
+    updatedAt: registration?.updatedAt || null
+  };
+};
+
+const resolveUniqueTeamName = async (baseName, excludeTeamId = null) => {
+  const normalizedBase = normalizeString(baseName) || "Approved Team";
+  let candidate = normalizedBase;
+  let suffix = 2;
+
+  while (true) {
+    const filter = {
+      name: {
+        $regex: `^${escapeRegex(candidate)}$`,
+        $options: "i"
+      }
+    };
+
+    if (excludeTeamId) {
+      filter._id = { $ne: excludeTeamId };
+    }
+
+    const existing = await Team.findOne(filter).select("_id").lean();
+    if (!existing) {
+      return candidate;
+    }
+
+    candidate = `${normalizedBase}-${suffix}`;
+    suffix += 1;
+  }
+};
+
+const resolveRegistrationPlayerIds = async (registration) => {
+  const gameIds = [
+    ...(Array.isArray(registration.players) ? registration.players : []),
+    registration.teamLeaderGameId,
+    registration.soloGameId
+  ]
+    .map((entry) => normalizeString(entry).toUpperCase())
+    .filter(Boolean);
+
+  const uniqueGameIds = [...new Set(gameIds)];
+
+  const gameIdUsers = uniqueGameIds.length
+    ? await User.find({
+        role: "user",
+        $or: [{ gameId: { $in: uniqueGameIds } }, { uid: { $in: uniqueGameIds } }]
+      })
+        .select("_id")
+        .lean()
+    : [];
+
+  const fallbackPlayerId = registration.userId?._id || registration.userId;
+  const rawPlayerIds = [...gameIdUsers.map((user) => user._id), fallbackPlayerId].filter(Boolean);
+  const playerIds = normalizeObjectIdArray(rawPlayerIds, "players");
+
+  if (!playerIds.length) {
+    throw new AppError("At least one valid player must exist to approve this registration", 400);
+  }
+
+  return playerIds;
+};
+
+const ensureApprovedTeamForRegistration = async (registration) => {
+  let team = null;
+
+  if (registration.approvedTeamId) {
+    team = await Team.findById(registration.approvedTeamId);
+  }
+
+  if (!team && registration.teamId) {
+    team = await Team.findOne({ teamId: registration.teamId });
+  }
+
+  const playerIds = await resolveRegistrationPlayerIds(registration);
+  const baseName =
+    normalizeString(registration.teamName) ||
+    normalizeString(registration.teamId) ||
+    normalizeString(registration.soloGameId) ||
+    `APPROVED-${String(registration._id).slice(-6).toUpperCase()}`;
+  const uniqueTeamName = await resolveUniqueTeamName(baseName, team?._id || null);
+
+  if (team) {
+    team.name = uniqueTeamName;
+    if (registration.teamId) {
+      team.teamId = registration.teamId;
+    }
+    team.players = playerIds;
+    await team.save();
+    return team;
+  }
+
+  return Team.create({
+    name: uniqueTeamName,
+    teamId: registration.teamId || undefined,
+    players: playerIds
+  });
+};
 
 const mapResultPlayers = (resultEntry = {}) => {
   if (Array.isArray(resultEntry.players) && resultEntry.players.length) {
@@ -187,6 +376,7 @@ const mapMatch = (match) => ({
   selectedTeams: Array.isArray(match?.selectedTeams) ? match.selectedTeams.map(mapTeamSummary) : [],
   qualifiedTeams: Array.isArray(match?.qualifiedTeams) ? match.qualifiedTeams.map(mapTeamSummary) : [],
   resultsCount: Array.isArray(match?.results) ? match.results.length : 0,
+  bracket: mapBracketSummary(match),
   isLocked: Boolean(match?.isLocked),
   lockedAt: match?.lockedAt || null,
   updatedAt: match?.updatedAt
@@ -196,13 +386,16 @@ const mapMatchDetails = (match) => {
   const rows = [...(match?.results || [])]
     .map((result) => {
       const teamRef = result.teamId;
+      const totalKills = Number(result.totalKills ?? result.kills ?? 0);
+      const rank = Number(result.rank || 0);
 
       return {
         teamId: teamRef?._id || teamRef || null,
         teamCode: teamRef?.teamId || null,
         teamName: teamRef?.name || "Unknown Team",
-        rank: Number(result.rank || 0),
-        totalKills: Number(result.totalKills ?? result.kills ?? 0),
+        rank,
+        totalKills,
+        points: getBrTeamPoints({ totalKills, rank }),
         booyah: Boolean(result.booyah),
         players: mapResultPlayers(result)
       };
@@ -244,6 +437,12 @@ const fetchMatchWithDetails = (matchId) =>
     .populate("selectedTeams.players", "username gameId uid")
     .populate("qualifiedTeams", "teamId name players stats")
     .populate("qualifiedTeams.players", "username gameId uid")
+    .populate("bracket.participantSlots.teamId", "teamId name")
+    .populate(
+      "bracket.participantSlots.sourceMatchId",
+      "_id matchNumber bracket.round bracket.roundLabel bracket.matchOrder"
+    )
+    .populate("bracket.winnerTeamId", "teamId name")
     .populate("results.teamId", "teamId name players")
     .populate("results.teamId.players", "username gameId uid")
     .populate("results.players.userId", "username gameId uid")
@@ -411,12 +610,17 @@ const buildAggregateMaps = (results = []) => {
   const teamMap = new Map();
 
   (Array.isArray(results) ? results : []).forEach((result) => {
+    const rank = Number(result.rank || 0);
+    const rankPoints = getBrRankPoints(rank);
+    const teamKills = Number(result.totalKills ?? result.kills ?? 0);
+
     const teamId = result?.teamId?._id || result?.teamId;
     if (teamId) {
       const teamKey = String(teamId);
       if (!teamMap.has(teamKey)) {
         teamMap.set(teamKey, {
           kills: 0,
+          points: 0,
           booyah: 0,
           wins: 0,
           matchesPlayed: 0
@@ -424,9 +628,10 @@ const buildAggregateMaps = (results = []) => {
       }
 
       const teamBucket = teamMap.get(teamKey);
-      teamBucket.kills += Number(result.totalKills ?? result.kills ?? 0);
+      teamBucket.kills += teamKills;
+      teamBucket.points += teamKills + rankPoints;
       teamBucket.booyah += result.booyah ? 1 : 0;
-      teamBucket.wins += Number(result.rank || 0) === 1 ? 1 : 0;
+      teamBucket.wins += rank === 1 ? 1 : 0;
       teamBucket.matchesPlayed += 1;
     }
 
@@ -452,7 +657,7 @@ const buildAggregateMaps = (results = []) => {
       userBucket.booyah += booyah;
       userBucket.wins += booyah;
       userBucket.matchesPlayed += 1;
-      userBucket.points += kills * 2 + booyah * 10;
+      userBucket.points += kills + rankPoints;
     });
   });
 
@@ -498,6 +703,7 @@ const applyResultStatsDelta = async ({ match, previousResults, nextResults }) =>
 
   const teamDelta = computeDeltaMap(previousAgg.teamMap, nextAgg.teamMap, [
     "kills",
+    "points",
     "booyah",
     "wins",
     "matchesPlayed"
@@ -534,11 +740,13 @@ const applyResultStatsDelta = async ({ match, previousResults, nextResults }) =>
       update: {
         $inc: {
           "stats.totalKills": delta.kills,
+          "stats.totalPoints": delta.points,
           "stats.totalBooyah": delta.booyah,
           "stats.totalWins": delta.wins,
           "stats.matchesPlayed": delta.matchesPlayed,
 
           [`${modePath}.kills`]: delta.kills,
+          [`${modePath}.points`]: delta.points,
           [`${modePath}.booyah`]: delta.booyah,
           [`${modePath}.wins`]: delta.wins,
           [`${modePath}.matchesPlayed`]: delta.matchesPlayed
@@ -687,11 +895,17 @@ const createTournament = async ({ payload, adminUserId, io }) => {
   const normalizedPayload = {
     title: payload.title || payload.name,
     mode: payload.mode,
+    type: payload.type,
     entryFee: payload.entryFee,
     prizePool: payload.prizePool,
+    maxTeams: payload.maxTeams,
+    maxSlots: payload.maxSlots,
     maxPlayers: payload.maxPlayers,
     game: payload.game,
-    startTime: payload.startTime || payload.dateTime
+    tournamentStartTime: payload.tournamentStartTime || payload.dateTime,
+    startTime: payload.startTime || payload.dateTime,
+    registrationStartTime: payload.registrationStartTime,
+    registrationEndTime: payload.registrationEndTime
   };
 
   return tournamentService.createTournament(normalizedPayload, adminUserId, io);
@@ -719,7 +933,7 @@ const getTournaments = async (query = {}) => {
   const [items, total] = await Promise.all([
     Tournament.find(filter)
       .select(
-        "_id title name mode entryFee prizePool maxPlayers joinedPlayers participants status startTime dateTime createdAt updatedAt"
+        "_id title name mode type entryFee prizePool maxPlayers maxTeams playersPerTeam maxSlots filledSlots joinedPlayers participants status startTime dateTime isRegistrationClosed registrationStartTime registrationEndTime createdAt updatedAt"
       )
       .sort({ startTime: sortDirection, createdAt: -1 })
       .skip(skip)
@@ -810,6 +1024,328 @@ const updateTournament = async (id, payload = {}) => {
 
   await tournament.save();
   return mapTournament(tournament.toObject());
+};
+
+const updateTournamentRegistrationTime = async (payload = {}) => {
+  const tournamentId = normalizeString(payload.tournamentId || payload.id);
+  if (!tournamentId) {
+    throw new AppError("tournamentId is required", 400);
+  }
+
+  const tournament = await Tournament.findById(tournamentId);
+  if (!tournament) {
+    throw new AppError("Tournament not found", 404);
+  }
+
+  let hasUpdate = false;
+
+  if (payload.registrationStartTime !== undefined) {
+    const registrationStartTime = new Date(payload.registrationStartTime);
+    if (Number.isNaN(registrationStartTime.getTime())) {
+      throw new AppError("registrationStartTime must be a valid date", 400);
+    }
+
+    tournament.registrationStartTime = registrationStartTime;
+    hasUpdate = true;
+  }
+
+  if (payload.registrationEndTime !== undefined) {
+    const registrationEndTime = new Date(payload.registrationEndTime);
+    if (Number.isNaN(registrationEndTime.getTime())) {
+      throw new AppError("registrationEndTime must be a valid date", 400);
+    }
+
+    tournament.registrationEndTime = registrationEndTime;
+    hasUpdate = true;
+  }
+
+  if (!hasUpdate) {
+    throw new AppError("registrationStartTime or registrationEndTime is required", 400);
+  }
+
+  const effectiveStart = new Date(
+    tournament.registrationStartTime || tournament.createdAt || Date.now()
+  ).getTime();
+  const effectiveEnd = new Date(
+    tournament.registrationEndTime || tournament.startTime || tournament.dateTime || Date.now()
+  ).getTime();
+
+  if (
+    Number.isFinite(effectiveStart) &&
+    Number.isFinite(effectiveEnd) &&
+    effectiveStart > effectiveEnd
+  ) {
+    throw new AppError("registrationEndTime must be after registrationStartTime", 400);
+  }
+
+  const nowMs = Date.now();
+  const maxSlots = Number(tournament.maxSlots || tournament.maxPlayers || 0);
+  const joinedPlayersCount = Array.isArray(tournament.joinedPlayers)
+    ? tournament.joinedPlayers.length
+    : 0;
+  const filledSlots = Math.max(Number(tournament.filledSlots || 0), joinedPlayersCount);
+
+  if (maxSlots > 0 && filledSlots >= maxSlots) {
+    tournament.isRegistrationClosed = true;
+  } else if (effectiveEnd <= nowMs) {
+    tournament.isRegistrationClosed = true;
+  }
+
+  await tournament.save();
+  return mapTournament(tournament.toObject());
+};
+
+const getTournamentRegistrations = async (tournamentId, query = {}) => {
+  const normalizedTournamentId = toObjectId(tournamentId, "tournamentId");
+  const exists = await Tournament.findById(normalizedTournamentId).select("_id").lean();
+
+  if (!exists) {
+    throw new AppError("Tournament not found", 404);
+  }
+
+  const { page, limit, skip } = parsePagination(query);
+  const filter = {
+    tournamentId: normalizedTournamentId
+  };
+
+  const paymentStatus = normalizeString(query.paymentStatus).toLowerCase();
+  if (["pending", "paid", "failed"].includes(paymentStatus)) {
+    filter.status = paymentStatus;
+  }
+
+  const approvalStatus = normalizeString(query.approvalStatus).toLowerCase();
+  if (["pending", "approved", "rejected"].includes(approvalStatus)) {
+    filter.approvalStatus = approvalStatus;
+  }
+
+  const searchRegex = buildRegex(query.search);
+  if (searchRegex) {
+    filter.$or = [
+      { teamName: searchRegex },
+      { teamId: searchRegex },
+      { teamLeaderGameId: searchRegex },
+      { soloGameId: searchRegex }
+    ];
+  }
+
+  const [registrations, total] = await Promise.all([
+    TournamentRegistration.find(filter)
+      .populate("userId", "username gameId uid email")
+      .populate("approvedTeamId", "_id teamId name")
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    TournamentRegistration.countDocuments(filter)
+  ]);
+
+  return {
+    page,
+    limit,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / limit)),
+    results: registrations.map(mapRegistration)
+  };
+};
+
+const reviewTournamentRegistration = async ({ registrationId, approve, note, adminUserId }) => {
+  const normalizedRegistrationId = toObjectId(registrationId, "registrationId");
+  const registration = await TournamentRegistration.findById(normalizedRegistrationId);
+
+  if (!registration) {
+    throw new AppError("Registration not found", 404);
+  }
+
+  const shouldApprove = approve !== false;
+
+  if (shouldApprove && registration.status !== "paid") {
+    throw new AppError("Only paid registrations can be approved", 400);
+  }
+
+  if (shouldApprove) {
+    const team = await ensureApprovedTeamForRegistration(registration);
+    registration.approvalStatus = "approved";
+    registration.approvedTeamId = team._id;
+    registration.approvedAt = new Date();
+  } else {
+    registration.approvalStatus = "rejected";
+    registration.approvedTeamId = null;
+    registration.approvedAt = null;
+  }
+
+  registration.approvedBy = adminUserId || null;
+  registration.approvalNote = normalizeString(note) || null;
+  await registration.save();
+
+  const updated = await TournamentRegistration.findById(registration._id)
+    .populate("userId", "username gameId uid email")
+    .populate("approvedTeamId", "_id teamId name")
+    .lean();
+
+  return mapRegistration(updated);
+};
+
+const closeTournamentRegistration = async ({ tournamentId }) => {
+  const normalizedTournamentId = toObjectId(tournamentId, "tournamentId");
+  const tournament = await Tournament.findById(normalizedTournamentId);
+
+  if (!tournament) {
+    throw new AppError("Tournament not found", 404);
+  }
+
+  tournament.isRegistrationClosed = true;
+
+  await tournament.save();
+  return mapTournament(tournament.toObject());
+};
+
+const openTournamentRegistration = async ({ tournamentId, registrationEndTime, minutes }) => {
+  const normalizedTournamentId = toObjectId(tournamentId, "tournamentId");
+  const tournament = await Tournament.findById(normalizedTournamentId);
+
+  if (!tournament) {
+    throw new AppError("Tournament not found", 404);
+  }
+
+  if (tournament.status === "completed") {
+    throw new AppError("Completed tournament cannot be reopened", 400);
+  }
+
+  const maxSlots = Number(tournament.maxSlots || tournament.maxPlayers || 0);
+  const joinedPlayersCount = Array.isArray(tournament.joinedPlayers)
+    ? tournament.joinedPlayers.length
+    : 0;
+  const filledSlots = Math.max(Number(tournament.filledSlots || 0), joinedPlayersCount);
+
+  if (maxSlots > 0 && filledSlots >= maxSlots) {
+    throw new AppError("Tournament full", 400);
+  }
+
+  const nowMs = Date.now();
+  let nextEndTime = null;
+
+  if (registrationEndTime !== undefined) {
+    nextEndTime = new Date(registrationEndTime);
+    if (Number.isNaN(nextEndTime.getTime())) {
+      throw new AppError("registrationEndTime must be a valid date", 400);
+    }
+  } else {
+    const safeMinutesRaw = Number.parseInt(minutes, 10);
+    const safeMinutes = Number.isFinite(safeMinutesRaw) && safeMinutesRaw > 0 ? safeMinutesRaw : 30;
+    nextEndTime = new Date(nowMs + safeMinutes * 60 * 1000);
+  }
+
+  if (nextEndTime.getTime() <= nowMs) {
+    throw new AppError("registrationEndTime must be in the future", 400);
+  }
+
+  tournament.registrationStartTime = new Date(nowMs);
+  tournament.registrationEndTime = nextEndTime;
+  tournament.isRegistrationClosed = false;
+
+  await tournament.save();
+  return mapTournament(tournament.toObject());
+};
+
+const increaseTournamentTime = async ({ tournamentId, minutes }) => {
+  const normalizedTournamentId = toObjectId(tournamentId, "tournamentId");
+  const safeMinutes = Number.parseInt(minutes, 10);
+
+  if (!Number.isFinite(safeMinutes) || safeMinutes < 1) {
+    throw new AppError("minutes must be a positive integer", 400);
+  }
+
+  const tournament = await Tournament.findById(normalizedTournamentId);
+
+  if (!tournament) {
+    throw new AppError("Tournament not found", 404);
+  }
+
+  const nowMs = Date.now();
+  const registrationStartMs = new Date(tournament.registrationStartTime || 0).getTime();
+  const registrationEndMs = new Date(tournament.registrationEndTime || 0).getTime();
+
+  const baseMs = Math.max(
+    nowMs,
+    Number.isFinite(registrationStartMs) ? registrationStartMs : 0,
+    Number.isFinite(registrationEndMs) ? registrationEndMs : 0
+  );
+
+  tournament.registrationEndTime = new Date(baseMs + safeMinutes * 60 * 1000);
+
+  if (!tournament.registrationStartTime) {
+    tournament.registrationStartTime = new Date(nowMs);
+  }
+
+  const maxSlots = Number(tournament.maxSlots || tournament.maxPlayers || 0);
+  const joinedPlayersCount = Array.isArray(tournament.joinedPlayers)
+    ? tournament.joinedPlayers.length
+    : 0;
+  const filledSlots = Math.max(Number(tournament.filledSlots || 0), joinedPlayersCount);
+
+  if (maxSlots > 0 && filledSlots >= maxSlots) {
+    tournament.isRegistrationClosed = true;
+  }
+
+  await tournament.save();
+  return mapTournament(tournament.toObject());
+};
+
+const startTournament = async ({ tournamentId }) => {
+  const normalizedTournamentId = toObjectId(tournamentId, "tournamentId");
+  const tournament = await Tournament.findById(normalizedTournamentId);
+
+  if (!tournament) {
+    throw new AppError("Tournament not found", 404);
+  }
+
+  const now = new Date();
+  tournament.status = "live";
+  tournament.startTime = now;
+  tournament.dateTime = now;
+
+  if (!tournament.registrationStartTime) {
+    tournament.registrationStartTime = tournament.createdAt || now;
+  }
+
+  if (!tournament.registrationEndTime || tournament.registrationEndTime.getTime() > now.getTime()) {
+    tournament.registrationEndTime = now;
+  }
+
+  tournament.isRegistrationClosed = true;
+
+  await tournament.save();
+  return mapTournament(tournament.toObject());
+};
+
+const assignTournamentMatch = async (payload, io) => {
+  const tournamentId = toObjectId(payload.tournamentId, "tournamentId");
+  const teamIds = normalizeObjectIdArray(payload.teamIds || [], "teamIds");
+
+  if (!teamIds.length) {
+    throw new AppError("teamIds is required", 400);
+  }
+
+  const approvedCount = await TournamentRegistration.countDocuments({
+    tournamentId,
+    approvalStatus: "approved",
+    approvedTeamId: { $in: teamIds }
+  });
+
+  if (approvedCount !== teamIds.length) {
+    throw new AppError("Only approved teams from this tournament can be assigned to a match", 400);
+  }
+
+  return createMatch(
+    {
+      tournamentId,
+      selectedTeams: teamIds,
+      mode: payload.mode,
+      matchNumber: payload.matchNumber,
+      startTime: payload.startTime
+    },
+    io
+  );
 };
 
 const deleteTournament = async (id) => {
@@ -916,11 +1452,6 @@ const getMatch = async (matchId) => {
 
 const createMatch = async (payload, io) => {
   const tournamentId = toObjectId(payload.tournamentId, "tournamentId");
-  const selectedTeams = normalizeObjectIdArray(payload.selectedTeams || [], "selectedTeams");
-
-  if (!selectedTeams.length) {
-    throw new AppError("selectedTeams is required", 400);
-  }
 
   const tournament = await Tournament.findById(tournamentId)
     .select("_id title name mode joinedPlayers participants startTime dateTime")
@@ -930,12 +1461,50 @@ const createMatch = async (payload, io) => {
     throw new AppError("Tournament not found", 404);
   }
 
-  const teams = await Team.find({ _id: { $in: selectedTeams } })
-    .select("_id teamId name players")
-    .lean();
+  const mode = String(payload.mode || tournament.mode || "BR").toUpperCase();
+  if (!TOURNAMENT_MODES.includes(mode)) {
+    throw new AppError("mode must be BR or CS", 400);
+  }
 
-  if (teams.length !== selectedTeams.length) {
-    throw new AppError("One or more selected teams were not found", 404);
+  const requestedSelectedTeams = payload.selectedTeams
+    ? normalizeObjectIdArray(payload.selectedTeams, "selectedTeams")
+    : [];
+
+  let selectedTeams = [];
+  let teams = [];
+
+  if (mode === "BR") {
+    if (requestedSelectedTeams.length) {
+      selectedTeams = requestedSelectedTeams;
+      teams = await Team.find({ _id: { $in: selectedTeams } })
+        .select("_id teamId name players")
+        .lean();
+
+      if (teams.length !== selectedTeams.length) {
+        throw new AppError("One or more selected teams were not found", 404);
+      }
+    } else {
+      teams = await Team.find({}).sort({ createdAt: 1 }).select("_id teamId name players").lean();
+      selectedTeams = teams.map((team) => team._id);
+    }
+
+    if (!selectedTeams.length) {
+      throw new AppError("At least one team is required to create a BR match", 400);
+    }
+  } else {
+    selectedTeams = requestedSelectedTeams;
+
+    if (!selectedTeams.length) {
+      throw new AppError("selectedTeams is required for CS matches", 400);
+    }
+
+    teams = await Team.find({ _id: { $in: selectedTeams } })
+      .select("_id teamId name players")
+      .lean();
+
+    if (teams.length !== selectedTeams.length) {
+      throw new AppError("One or more selected teams were not found", 404);
+    }
   }
 
   teams.forEach((team) => {
@@ -973,11 +1542,6 @@ const createMatch = async (payload, io) => {
       .lean();
 
     matchNumber = Number(lastMatch?.matchNumber || 0) + 1;
-  }
-
-  const mode = String(payload.mode || tournament.mode || "BR").toUpperCase();
-  if (!TOURNAMENT_MODES.includes(mode)) {
-    throw new AppError("mode must be BR or CS", 400);
   }
 
   const startTimeInput = payload.startTime || tournament.startTime || tournament.dateTime || new Date();
@@ -1039,6 +1603,7 @@ const getMatches = async (query = {}) => {
       .populate("tournamentId", "title name mode startTime")
       .populate("selectedTeams", "teamId name")
       .populate("qualifiedTeams", "teamId name")
+      .populate("bracket.winnerTeamId", "teamId name")
       .sort({ startTime: -1, createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -1264,8 +1829,17 @@ const endMatch = async (payload, io) => {
 
   io?.to(String(match._id)).emit("match:end", details);
   leaderboardService.invalidateLeaderboardCache();
-   return details;
+  return details;
 };
+
+const getTournamentBracket = async (tournamentId) =>
+  bracketService.getTournamentBracket(tournamentId);
+
+const createTournamentBracket = async (payload, io) =>
+  bracketService.createTournamentBracket(payload, io);
+
+const saveTournamentBracketResult = async (payload, io) =>
+  bracketService.saveBracketMatchResult(payload, io);
 
 const getUsers = async (query = {}) => {
   const { page, limit, skip } = parsePagination(query);
@@ -1442,11 +2016,22 @@ module.exports = {
   getDashboard,
   createTournament,
   getTournaments,
+  getTournamentRegistrations,
+  reviewTournamentRegistration,
+  closeTournamentRegistration,
+  openTournamentRegistration,
+  increaseTournamentTime,
+  startTournament,
+  assignTournamentMatch,
   updateTournament,
+  updateTournamentRegistrationTime,
   deleteTournament,
   registerTeam,
   getTeams,
   createMatch,
+  getTournamentBracket,
+  createTournamentBracket,
+  saveTournamentBracketResult,
   saveQualifiedTeams,
   getMatch,
   getMatches,

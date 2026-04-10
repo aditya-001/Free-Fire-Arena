@@ -16,9 +16,33 @@ const defaultForm = {
   dateTime: ""
 };
 
+const toTimestamp = (value) => {
+  if (!value) return null;
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? null : timestamp;
+};
+
+const getRegistrationState = (tournament, nowMs) => {
+  const startMs = toTimestamp(tournament.registrationStartTime);
+  const endMs = toTimestamp(
+    tournament.registrationEndTime || tournament.startTime || tournament.dateTime
+  );
+
+  if (endMs !== null && nowMs > endMs) {
+    return "closed";
+  }
+
+  if (startMs !== null && nowMs < startMs) {
+    return "not_started";
+  }
+
+  return "open";
+};
+
 const TournamentsPage = () => {
   const [tournaments, setTournaments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [formData, setFormData] = useState(defaultForm);
   const [submitting, setSubmitting] = useState(false);
   const { user } = useAuth();
@@ -41,6 +65,16 @@ const TournamentsPage = () => {
   }, []);
 
   useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!socket) return undefined;
 
     const handleTournamentUpdate = () => {
@@ -55,19 +89,38 @@ const TournamentsPage = () => {
     };
   }, [socket]);
 
-  const handleJoinTournament = async (tournamentId) => {
+  const handleJoinTournament = (tournament) => {
+    const registrationState = getRegistrationState(tournament, Date.now());
+    if (registrationState === "closed") {
+      toast.error("Registration closed for this tournament");
+      return;
+    }
+
+    if (registrationState === "not_started") {
+      toast.error("Registration has not started yet");
+      return;
+    }
+
     if (!user) {
       navigate("/auth");
       return;
     }
 
-    try {
-      await api.post(`/tournaments/${tournamentId}/join`);
-      toast.success("Tournament joined successfully");
-      fetchTournaments();
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Unable to join tournament");
-    }
+    navigate(`/tournaments/${tournament?._id}/join`, {
+      state: {
+        tournament
+      }
+    });
+  };
+
+  const handleViewDetails = (tournament) => {
+    if (!tournament?._id) return;
+
+    navigate(`/tournaments/${tournament._id}`, {
+      state: {
+        tournament
+      }
+    });
   };
 
   const handleCreateTournament = async (event) => {
@@ -108,7 +161,12 @@ const TournamentsPage = () => {
       <section className="tournament-layout">
         <div className="card-grid">
           {tournaments.map((tournament) => {
-            const joined = tournament.participants?.some(
+            const participants =
+              (Array.isArray(tournament.joinedPlayers) && tournament.joinedPlayers) ||
+              tournament.participants ||
+              [];
+
+            const joined = participants.some(
               (participant) => participant._id === user?._id || participant === user?._id
             );
 
@@ -117,7 +175,9 @@ const TournamentsPage = () => {
                 key={tournament._id}
                 canJoin={Boolean(user)}
                 joinDisabled={joined}
+                nowMs={nowMs}
                 onJoin={handleJoinTournament}
+                onViewDetails={handleViewDetails}
                 tournament={tournament}
               />
             );

@@ -1,6 +1,6 @@
 const TOURNAMENT_STATUS = Object.freeze(["upcoming", "live", "completed"]);
 const TOURNAMENT_MODES = Object.freeze(["BR", "CS"]);
-const MATCH_STATUS = Object.freeze(["live", "completed"]);
+const MATCH_STATUS = Object.freeze(["pending", "live", "completed"]);
 
 const TOURNAMENT_DEFAULTS = Object.freeze({
   GAME: "Free Fire",
@@ -17,6 +17,14 @@ const API_MESSAGES = Object.freeze({
   ADMIN_LOGIN_SUCCESS: "Admin login successful",
   ADMIN_DASHBOARD_FETCHED: "Admin dashboard fetched successfully",
   ADMIN_TOURNAMENT_UPDATED: "Tournament updated successfully",
+  ADMIN_TOURNAMENT_TIME_UPDATED: "Tournament registration time updated successfully",
+  ADMIN_TOURNAMENT_TIME_INCREASED: "Tournament registration time increased successfully",
+  ADMIN_TOURNAMENT_STARTED: "Tournament started successfully",
+  ADMIN_TOURNAMENT_REGISTRATION_CLOSED: "Tournament registration closed successfully",
+  ADMIN_TOURNAMENT_REGISTRATION_OPENED: "Tournament registration opened successfully",
+  ADMIN_TOURNAMENT_REGISTRATIONS_FETCHED: "Tournament registrations fetched successfully",
+  ADMIN_TOURNAMENT_REGISTRATION_REVIEWED: "Tournament registration reviewed successfully",
+  ADMIN_TOURNAMENT_MATCH_ASSIGNED: "Tournament match assigned successfully",
   ADMIN_TOURNAMENT_DELETED: "Tournament deleted successfully",
   ADMIN_TOURNAMENTS_FETCHED: "Admin tournaments fetched successfully",
   ADMIN_MATCH_CREATED: "Match created successfully",
@@ -28,13 +36,20 @@ const API_MESSAGES = Object.freeze({
   ADMIN_MATCH_QUALIFIED_TEAMS_SAVED: "Qualified teams saved successfully",
   ADMIN_MATCH_RESULT_UPDATED: "Match result updated successfully",
   ADMIN_MATCH_RESULT_EDITED: "Match result edited successfully",
+  ADMIN_BRACKET_FETCHED: "Tournament bracket fetched successfully",
+  ADMIN_BRACKET_CREATED: "Tournament bracket created successfully",
+  ADMIN_BRACKET_RESULT_SAVED: "Bracket result saved successfully",
   ADMIN_USERS_FETCHED: "Admin users fetched successfully",
   ADMIN_USER_BAN_UPDATED: "User moderation status updated",
   ADMIN_WITHDRAW_DECISION_SAVED: "Withdrawal decision saved",
   AVAILABILITY_FETCHED: "Availability checked",
   TOURNAMENT_CREATED: "Tournament created successfully",
+  TOURNAMENT_REGISTERED: "Tournament registration saved successfully",
+  TOURNAMENT_PAYMENT_ORDER_CREATED: "Tournament payment order created successfully",
+  TOURNAMENT_PAYMENT_VERIFIED: "Tournament payment verified and slot booked successfully",
   TOURNAMENT_JOINED: "Tournament joined successfully",
   TOURNAMENTS_FETCHED: "Tournaments fetched successfully",
+  TOURNAMENT_DETAILS_FETCHED: "Tournament details fetched successfully",
   LEADERBOARD_FETCHED: "Leaderboard fetched successfully",
   MATCH_LEADERBOARD_FETCHED: "Match leaderboard fetched successfully",
   MATCH_HISTORY_FETCHED: "Match history fetched successfully",

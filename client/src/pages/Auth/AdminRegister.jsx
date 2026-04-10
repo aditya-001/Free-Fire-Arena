@@ -31,23 +31,30 @@ const AdminRegister = () => {
   });
 
   const checkKey = () => {
-    // In production, this validates against an API/ENV variable
-    if (key === "ELITE_ADMIN_2026") {
-      setKeyError(false);
-      setAccessGranted(true);
-      toast.success("Security Clearance Verified");
-    } else {
+    if (key.trim().length < 3) {
       setKeyError(true);
-      setTimeout(() => setKeyError(false), 500); // end shake
+      toast.error("Enter a valid admin secret key");
+      setTimeout(() => setKeyError(false), 500);
+      return;
     }
+
+    setKeyError(false);
+    setAccessGranted(true);
+    toast.success("Security key captured. Continue registration.");
   };
 
   const onSubmit = async (data) => {
     setSubmitting(true);
+    if (!key.trim()) {
+      toast.error("Admin secret key is required");
+      setSubmitting(false);
+      return;
+    }
+
     try {
       await adminRegister({
         ...data,
-        adminKey: key
+        adminKey: key.trim()
       });
       navigate("/admin/dashboard");
     } catch (err) {

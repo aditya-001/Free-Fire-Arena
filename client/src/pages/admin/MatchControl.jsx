@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import toast from "react-hot-toast";
-import { CheckCircle2, PlusCircle, RefreshCw, Swords, Users } from "lucide-react";
+import { CheckCircle2, PlusCircle, RefreshCw, Shuffle, Swords, Users } from "lucide-react";
+import BracketTree from "../../components/tournament/BracketTree";
 import adminService from "../../services/adminService";
 
 const inputClass =
@@ -36,6 +37,54 @@ const MatchControl = () => {
     matchId: "",
     qualifiedTeams: []
   });
+  const [bracketForm, setBracketForm] = useState({
+    tournamentId: "",
+    teamIds: []
+  });
+  const [bracket, setBracket] = useState(null);
+  const [bracketLoading, setBracketLoading] = useState(false);
+  const [winnerSelections, setWinnerSelections] = useState({});
+  const [bracketSavingMatchId, setBracketSavingMatchId] = useState("");
+
+  const buildWinnerSelections = (bracketData, previous = {}) => {
+    const next = {};
+
+    (bracketData?.rounds || []).forEach((round) => {
+      (round.matches || []).forEach((match) => {
+        if (match.winnerTeamId) {
+          next[match._id] = String(match.winnerTeamId);
+          return;
+        }
+
+        if (previous[match._id]) {
+          next[match._id] = previous[match._id];
+        }
+      });
+    });
+
+    return next;
+  };
+
+  const loadBracket = async (tournamentId) => {
+    if (!tournamentId) {
+      setBracket(null);
+      setWinnerSelections({});
+      return;
+    }
+
+    setBracketLoading(true);
+    try {
+      const { data } = await adminService.getTournamentBracket(tournamentId);
+      setBracket(data);
+      setWinnerSelections((current) => buildWinnerSelections(data, current));
+    } catch (error) {
+      setBracket(null);
+      setWinnerSelections({});
+      toast.error(error.response?.data?.message || "Failed to load bracket");
+    } finally {
+      setBracketLoading(false);
+    }
+  };
 
   const fetchUsers = async (search = "") => {
     try {
@@ -43,6 +92,13 @@ const MatchControl = () => {
       setUsers(data.results || []);
     } catch (error) {
       setUsers([]);
+    }
+  };
+
+  const refreshAllData = async () => {
+    await fetchAll();
+    if (bracketForm.tournamentId) {
+      await loadBracket(bracketForm.tournamentId);
     }
   };
 
@@ -78,9 +134,17 @@ const MatchControl = () => {
     return () => clearTimeout(timeout);
   }, [playerSearch]);
 
+  useEffect(() => {
+    loadBracket(bracketForm.tournamentId);
+  }, [bracketForm.tournamentId]);
+
   const selectedMatch = useMemo(
     () => matches.find((match) => String(match._id) === String(qualificationForm.matchId)),
     [matches, qualificationForm.matchId]
+  );
+  const clashSquadTournaments = useMemo(
+    () => tournaments.filter((tournament) => tournament.mode === "CS"),
+    [tournaments]
   );
 
   useEffect(() => {
@@ -107,6 +171,22 @@ const MatchControl = () => {
 
   const toggleSelect = (list, value) =>
     list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+
+  const toggleBracketTeam = (teamId) => {
+    setBracketForm((current) => {
+      const alreadySelected = current.teamIds.includes(teamId);
+
+      if (!alreadySelected && current.teamIds.length >= 8) {
+        toast.error("Select exactly 8 teams for the bracket");
+        return current;
+      }
+
+      return {
+        ...current,
+        teamIds: toggleSelect(current.teamIds, teamId)
+      };
+    });
+  };
 
   const submitTeamRegistration = async (event) => {
     event.preventDefault();
@@ -136,7 +216,7 @@ const MatchControl = () => {
   const submitCreateMatch = async (event) => {
     event.preventDefault();
 
-    if (!matchForm.selectedTeams.length) {
+    if (matchForm.mode !== "BR" && !matchForm.selectedTeams.length) {
       toast.error("Select teams for this match");
       return;
     }
@@ -147,11 +227,11 @@ const MatchControl = () => {
         tournamentId: matchForm.tournamentId,
         matchNumber: matchForm.matchNumber ? Number(matchForm.matchNumber) : undefined,
         mode: matchForm.mode,
-        selectedTeams: matchForm.selectedTeams,
+        selectedTeams: matchForm.mode === "BR" ? undefined : matchForm.selectedTeams,
         startTime: matchForm.startTime ? new Date(matchForm.startTime).toISOString() : undefined
       });
 
-      toast.success("Manual match created");
+      toast.success(matchForm.mode === "BR" ? "BR match created with all teams" : "Manual match created");
       setMatchForm({
         tournamentId: "",
         matchNumber: "",
@@ -194,9 +274,70 @@ const MatchControl = () => {
     }
   };
 
+  const submitCreateBracket = async (event) => {
+    event.preventDefault();
+
+    if (!bracketForm.tournamentId) {
+      toast.error("Select a Clash Squad tournament");
+      return;
+    }
+
+    if (bracketForm.teamIds.length !== 8) {
+      toast.error("Select exactly 8 teams");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const { data } = await adminService.createTournamentBracket({
+        tournamentId: bracketForm.tournamentId,
+        teamIds: bracketForm.teamIds
+      });
+
+      setBracket(data);
+      setWinnerSelections(buildWinnerSelections(data));
+      toast.success("Bracket created and teams shuffled");
+      await fetchAll();
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to create bracket");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const submitBracketWinner = async (matchId) => {
+    const winnerTeamId = winnerSelections[matchId];
+
+    if (!winnerTeamId) {
+      toast.error("Select a winner first");
+      return;
+    }
+
+    setBracketSavingMatchId(matchId);
+    try {
+      const { data } = await adminService.saveTournamentBracketResult({
+        matchId,
+        winnerTeamId
+      });
+
+      setBracket(data);
+      setWinnerSelections((current) => buildWinnerSelections(data, current));
+      toast.success("Winner advanced to the next round");
+      await fetchAll();
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Failed to save bracket result");
+    } finally {
+      setBracketSavingMatchId("");
+    }
+  };
+
   const selectedMatchTeams = Array.isArray(selectedMatch?.selectedTeams)
     ? selectedMatch.selectedTeams
     : [];
+  const getMatchLabel = (match) =>
+    match?.bracket?.roundLabel
+      ? `${match.bracket.roundLabel} ${match.bracket.matchOrder || ""}`.trim()
+      : `Match #${match.matchNumber}`;
 
   return (
     <section className="space-y-5">
@@ -208,7 +349,7 @@ const MatchControl = () => {
           </div>
           <button
             type="button"
-            onClick={fetchAll}
+            onClick={refreshAllData}
             className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-3 py-2 text-sm text-white/80 transition hover:border-fuchsia-400/40"
           >
             <RefreshCw size={14} />
@@ -307,7 +448,13 @@ const MatchControl = () => {
 
             <select
               value={matchForm.mode}
-              onChange={(event) => setMatchForm((current) => ({ ...current, mode: event.target.value }))}
+              onChange={(event) =>
+                setMatchForm((current) => ({
+                  ...current,
+                  mode: event.target.value,
+                  selectedTeams: event.target.value === "BR" ? [] : current.selectedTeams
+                }))
+              }
               className={inputClass}
             >
               <option value="BR">BR</option>
@@ -323,37 +470,45 @@ const MatchControl = () => {
           </div>
 
           <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
-            <p className="mb-2 text-xs uppercase tracking-[0.15em] text-white/60">Select teams</p>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {teams.map((team) => {
-                const teamId = String(team._id);
-                const checked = matchForm.selectedTeams.includes(teamId);
+            {matchForm.mode === "BR" ? (
+              <div className="rounded-lg border border-cyan-300/35 bg-cyan-500/10 px-3 py-2 text-sm text-cyan-100">
+                All registered teams will be included automatically for BR matches.
+              </div>
+            ) : (
+              <>
+                <p className="mb-2 text-xs uppercase tracking-[0.15em] text-white/60">Select teams</p>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {teams.map((team) => {
+                    const teamId = String(team._id);
+                    const checked = matchForm.selectedTeams.includes(teamId);
 
-                return (
-                  <label
-                    key={teamId}
-                    className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
-                      checked
-                        ? "border-fuchsia-400/50 bg-fuchsia-500/15 text-white"
-                        : "border-white/10 text-white/75 hover:border-white/30"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() =>
-                        setMatchForm((current) => ({
-                          ...current,
-                          selectedTeams: toggleSelect(current.selectedTeams, teamId)
-                        }))
-                      }
-                    />
-                    <span>{team.teamName}</span>
-                    <span className="ml-auto text-xs text-white/50">{team.teamId}</span>
-                  </label>
-                );
-              })}
-            </div>
+                    return (
+                      <label
+                        key={teamId}
+                        className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+                          checked
+                            ? "border-fuchsia-400/50 bg-fuchsia-500/15 text-white"
+                            : "border-white/10 text-white/75 hover:border-white/30"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() =>
+                            setMatchForm((current) => ({
+                              ...current,
+                              selectedTeams: toggleSelect(current.selectedTeams, teamId)
+                            }))
+                          }
+                        />
+                        <span>{team.teamName}</span>
+                        <span className="ml-auto text-xs text-white/50">{team.teamId}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </>
+            )}
           </div>
 
           <button
@@ -365,6 +520,116 @@ const MatchControl = () => {
             {saving ? "Creating..." : "Create Match"}
           </button>
         </form>
+      </motion.div>
+
+      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className={cardClass}>
+        <p className="text-xs uppercase tracking-[0.18em] text-white/65">Clash Squad Bracket</p>
+        <h3 className="font-['Rajdhani'] text-3xl font-bold text-white">Generate 8-Team Elimination Tree</h3>
+
+        <form onSubmit={submitCreateBracket} className="mt-4 grid gap-4">
+          <div className="grid gap-3 lg:grid-cols-[1.1fr_0.9fr]">
+            <select
+              value={bracketForm.tournamentId}
+              onChange={(event) =>
+                setBracketForm({
+                  tournamentId: event.target.value,
+                  teamIds: []
+                })
+              }
+              className={inputClass}
+            >
+              <option value="">Select Clash Squad tournament</option>
+              {clashSquadTournaments.map((tournament) => (
+                <option key={tournament._id} value={tournament._id}>
+                  {tournament.title}
+                </option>
+              ))}
+            </select>
+
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-sm text-white/75">
+              {bracket?.enabled ? (
+                <span>Bracket generated. Enter winners directly from the tree below.</span>
+              ) : (
+                <span>Select 8 teams. They will be shuffled automatically into quarter finals.</span>
+              )}
+            </div>
+          </div>
+
+          {!bracket?.enabled ? (
+            <>
+              <div className="rounded-xl border border-white/10 bg-white/[0.02] p-3">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-xs uppercase tracking-[0.15em] text-white/60">Choose 8 teams</p>
+                  <span className="rounded-full border border-white/12 bg-white/[0.03] px-3 py-1 text-[11px] uppercase tracking-[0.15em] text-white/70">
+                    {bracketForm.teamIds.length}/8 selected
+                  </span>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {teams.map((team) => {
+                    const teamId = String(team._id);
+                    const checked = bracketForm.teamIds.includes(teamId);
+                    const disableUnchecked = !checked && bracketForm.teamIds.length >= 8;
+
+                    return (
+                      <label
+                        key={`bracket-${teamId}`}
+                        className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition ${
+                          checked
+                            ? "border-cyan-300/50 bg-cyan-500/15 text-white"
+                            : "border-white/10 text-white/75 hover:border-white/30"
+                        } ${disableUnchecked ? "opacity-45" : ""}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={disableUnchecked}
+                          onChange={() => toggleBracketTeam(teamId)}
+                        />
+                        <span>{team.teamName}</span>
+                        <span className="ml-auto text-xs text-white/50">{team.teamId}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={saving || bracketForm.teamIds.length !== 8 || !bracketForm.tournamentId}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-300/45 bg-cyan-500/16 px-4 py-2 text-sm text-cyan-100 transition hover:bg-cyan-500/24 disabled:opacity-50"
+              >
+                <Shuffle size={16} />
+                {saving ? "Generating..." : "Generate Bracket"}
+              </button>
+            </>
+          ) : null}
+        </form>
+
+        <div className="mt-5">
+          {bracketLoading ? (
+            <p className="text-sm text-white/60">Loading bracket...</p>
+          ) : (
+            <BracketTree
+              bracket={bracket}
+              adminMode
+              winnerSelections={winnerSelections}
+              savingMatchId={bracketSavingMatchId}
+              onWinnerChange={(matchId, winnerTeamId) =>
+                setWinnerSelections((current) => ({
+                  ...current,
+                  [matchId]: winnerTeamId
+                }))
+              }
+              onWinnerSubmit={submitBracketWinner}
+              emptyMessage={
+                bracketForm.tournamentId
+                  ? "No bracket has been generated for this tournament yet."
+                  : "Select a Clash Squad tournament to view or create its bracket."
+              }
+            />
+          )}
+        </div>
       </motion.div>
 
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className={cardClass}>
@@ -385,7 +650,7 @@ const MatchControl = () => {
             <option value="">Select match</option>
             {matches.map((match) => (
               <option key={match._id} value={match._id}>
-                Match #{match.matchNumber} - {match.tournamentTitle || "Tournament"}
+                {getMatchLabel(match)} - {match.tournamentTitle || "Tournament"}
               </option>
             ))}
           </select>

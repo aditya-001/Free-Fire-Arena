@@ -27,6 +27,73 @@ const resultSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const bracketSlotSchema = new mongoose.Schema(
+  {
+    slotNumber: { type: Number, required: true, min: 1, max: 2 },
+    sourceMatchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Match",
+      default: null
+    },
+    teamId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Team",
+      default: null
+    }
+  },
+  { _id: false }
+);
+
+const bracketSchema = new mongoose.Schema(
+  {
+    enabled: {
+      type: Boolean,
+      default: false
+    },
+    round: {
+      type: String,
+      enum: ["quarterfinal", "semifinal", "final"],
+      default: null
+    },
+    roundLabel: {
+      type: String,
+      default: null,
+      trim: true
+    },
+    roundOrder: {
+      type: Number,
+      default: null,
+      min: 1
+    },
+    matchOrder: {
+      type: Number,
+      default: null,
+      min: 1
+    },
+    nextMatchId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Match",
+      default: null
+    },
+    nextMatchSlot: {
+      type: Number,
+      default: null,
+      min: 1,
+      max: 2
+    },
+    participantSlots: {
+      type: [bracketSlotSchema],
+      default: []
+    },
+    winnerTeamId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Team",
+      default: null
+    }
+  },
+  { _id: false }
+);
+
 const matchSchema = new mongoose.Schema(
   {
     tournamentId: {
@@ -82,6 +149,10 @@ const matchSchema = new mongoose.Schema(
     lockedAt: {
       type: Date,
       default: null
+    },
+    bracket: {
+      type: bracketSchema,
+      default: () => ({})
     }
   },
   { timestamps: true }
@@ -94,6 +165,9 @@ matchSchema.index({ status: 1, startTime: -1 });
 matchSchema.index({ mode: 1, status: 1, startTime: -1 });
 matchSchema.index({ selectedTeams: 1 });
 matchSchema.index({ qualifiedTeams: 1 });
+matchSchema.index({ "bracket.enabled": 1, "bracket.roundOrder": 1, "bracket.matchOrder": 1 });
+matchSchema.index({ "bracket.nextMatchId": 1 });
+matchSchema.index({ "bracket.winnerTeamId": 1 });
 matchSchema.index({ "results.user": 1 });
 matchSchema.index({ "results.teamId": 1 });
 matchSchema.index({ "results.players.userId": 1 });

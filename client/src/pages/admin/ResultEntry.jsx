@@ -19,6 +19,10 @@ const ResultEntry = () => {
   const [loadingMatch, setLoadingMatch] = useState(false);
   const [saving, setSaving] = useState(false);
   const [successPulse, setSuccessPulse] = useState(false);
+  const getMatchLabel = (match) =>
+    match?.bracket?.roundLabel
+      ? `${match.bracket.roundLabel} ${match.bracket.matchOrder || ""}`.trim()
+      : `Match #${match.matchNumber}`;
 
   const fetchMatches = async () => {
     setLoading(true);
@@ -204,7 +208,7 @@ const ResultEntry = () => {
           <option value="">Select live match</option>
           {matches.map((match) => (
             <option key={match._id} value={match._id}>
-              Match #{match.matchNumber} - {match.tournamentTitle || "Tournament"}
+              {getMatchLabel(match)} - {match.tournamentTitle || "Tournament"}
             </option>
           ))}
         </select>

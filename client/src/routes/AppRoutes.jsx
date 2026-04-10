@@ -9,6 +9,8 @@ const HomePage = lazy(() => import("../pages/HomePage"));
 const LeaderboardPage = lazy(() => import("../pages/LeaderboardPage"));
 const ProfilePage = lazy(() => import("../pages/ProfilePage"));
 const TournamentsPage = lazy(() => import("../pages/TournamentsPage"));
+const TournamentDetailsPage = lazy(() => import("../pages/TournamentDetailsPage"));
+const TournamentJoinPage = lazy(() => import("../pages/TournamentJoinPage"));
 const WalletPage = lazy(() => import("../pages/Wallet"));
 const AuthWrapper = lazy(() => import("../pages/Auth/AuthWrapper"));
 const Login = lazy(() => import("../pages/Auth/Login"));
@@ -16,6 +18,7 @@ const UserRegister = lazy(() => import("../pages/Auth/UserRegister"));
 const AdminRegister = lazy(() => import("../pages/Auth/AdminRegister"));
 const AdminLogin = lazy(() => import("../pages/Auth/AdminLogin"));
 const AdminDashboard = lazy(() => import("../pages/admin/AdminDashboard"));
+const TournamentControl = lazy(() => import("../pages/admin/TournamentControl"));
 const ManageTournaments = lazy(() => import("../pages/admin/ManageTournaments"));
 const MatchControl = lazy(() => import("../pages/admin/MatchControl"));
 const ResultEntry = lazy(() => import("../pages/admin/ResultEntry"));
@@ -92,7 +95,9 @@ const AppRoutes = () => (
       >
         <Route index element={<Navigate to="/admin/dashboard" replace />} />
         <Route path="dashboard" element={<AdminDashboard />} />
-        <Route path="tournaments" element={<ManageTournaments />} />
+        <Route path="tournaments" element={<Navigate to="/admin/tournaments/control" replace />} />
+        <Route path="tournaments/control" element={<TournamentControl />} />
+        <Route path="tournaments/manage" element={<ManageTournaments />} />
         <Route path="matches" element={<Navigate to="/admin/matches/control" replace />} />
         <Route path="matches/control" element={<MatchControl />} />
         <Route path="matches/result-entry" element={<ResultEntry />} />
@@ -104,6 +109,15 @@ const AppRoutes = () => (
       <Route element={<AppLayout />}>
         <Route index element={<HomePage />} />
         <Route path="/tournaments" element={<TournamentsPage />} />
+        <Route path="/tournaments/:id" element={<TournamentDetailsPage />} />
+        <Route
+          path="/tournaments/:id/join"
+          element={
+            <ProtectedRoute>
+              <TournamentJoinPage />
+            </ProtectedRoute>
+          }
+        />
         <Route path="/leaderboard" element={<LeaderboardPage />} />
         <Route
           path="/wallet"

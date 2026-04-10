@@ -26,6 +26,10 @@ const ensurePrimaryMatchForTournament = async (tournamentDoc, io) => {
     throw new AppError("Tournament is required to create match", 400);
   }
 
+  if (String(tournamentDoc.mode || "").toUpperCase() === "CS") {
+    return null;
+  }
+
   const existingMatch = await Match.findOne({ tournamentId: tournamentDoc._id })
     .sort({ matchNumber: 1 })
     .select("_id");
@@ -63,7 +67,15 @@ const joinUserToTournamentMatch = async (tournamentDoc, userId, io) => {
     throw new AppError("Tournament not found", 404);
   }
 
+  if (String(tournamentDoc.mode || "").toUpperCase() === "CS") {
+    return null;
+  }
+
   const match = await ensurePrimaryMatchForTournament(tournamentDoc, io);
+  if (!match?._id) {
+    return null;
+  }
+
   const freshMatch = await Match.findById(match._id);
 
   if (!freshMatch) {

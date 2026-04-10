@@ -53,11 +53,30 @@ const createMatchBodySchema = Joi.object({
   tournamentId: objectId.required(),
   matchNumber: Joi.number().integer().min(1),
   mode: Joi.string().valid("BR", "CS"),
-  selectedTeams: Joi.array().items(objectId.required()).min(1).unique().required(),
+  selectedTeams: Joi.array().items(objectId.required()).min(1).unique(),
   startTime: Joi.date(),
   roomId: Joi.string().trim().allow(""),
   roomPassword: Joi.string().trim().allow(""),
   password: Joi.string().trim().allow("")
+});
+
+const getTournamentBracketParamsSchema = Joi.object({
+  id: objectId.required()
+});
+
+const getTournamentRegistrationsParamsSchema = Joi.object({
+  id: objectId.required()
+});
+
+const createTournamentBracketBodySchema = Joi.object({
+  tournamentId: objectId.required(),
+  teamIds: Joi.array().items(objectId.required()).length(8).unique().required(),
+  startTime: Joi.date().iso()
+});
+
+const saveBracketResultBodySchema = Joi.object({
+  matchId: objectId.required(),
+  winnerTeamId: objectId.required()
 });
 
 const saveQualifiedTeamsBodySchema = Joi.object({
@@ -86,13 +105,67 @@ const endMatchBodySchema = Joi.object({
   matchId: objectId.required()
 });
 
+const updateTournamentTimeBodySchema = Joi.object({
+  tournamentId: objectId.required(),
+  registrationStartTime: Joi.date().iso(),
+  registrationEndTime: Joi.date().iso()
+})
+  .or("registrationStartTime", "registrationEndTime")
+  .messages({
+    "object.missing": "registrationStartTime or registrationEndTime is required"
+  });
+
+const reviewTournamentRegistrationBodySchema = Joi.object({
+  registrationId: objectId.required(),
+  approve: Joi.boolean().default(true),
+  note: Joi.string().trim().allow("").max(300)
+});
+
+const closeTournamentRegistrationBodySchema = Joi.object({
+  tournamentId: objectId.required()
+});
+
+const openTournamentRegistrationBodySchema = Joi.object({
+  tournamentId: objectId.required(),
+  registrationEndTime: Joi.date().iso(),
+  minutes: Joi.number().integer().min(1).max(10080)
+});
+
+const increaseTournamentTimeBodySchema = Joi.object({
+  tournamentId: objectId.required(),
+  minutes: Joi.number().integer().min(1).max(720).required()
+});
+
+const startTournamentBodySchema = Joi.object({
+  tournamentId: objectId.required()
+});
+
+const assignTournamentMatchBodySchema = Joi.object({
+  tournamentId: objectId.required(),
+  teamIds: Joi.array().items(objectId.required()).min(1).unique().required(),
+  mode: Joi.string().valid("BR", "CS"),
+  matchNumber: Joi.number().integer().min(1),
+  startTime: Joi.date().iso()
+});
+
 module.exports = {
   validateRegisterTeamBody: runBodyValidation(registerTeamBodySchema),
   validateCreateAdminMatchBody: runBodyValidation(createMatchBodySchema),
+  validateGetTournamentBracketParams: runParamsValidation(getTournamentBracketParamsSchema),
+  validateGetTournamentRegistrationsParams: runParamsValidation(getTournamentRegistrationsParamsSchema),
+  validateCreateTournamentBracketBody: runBodyValidation(createTournamentBracketBodySchema),
+  validateSaveBracketResultBody: runBodyValidation(saveBracketResultBodySchema),
   validateQualifiedTeamsBody: runBodyValidation(saveQualifiedTeamsBodySchema),
   validateGetAdminMatchParams: runParamsValidation(getMatchParamsSchema),
   validateUpdateAdminMatchBody: runBodyValidation(updateMatchBodySchema),
   validateEditAdminMatchParams: runParamsValidation(editMatchParamsSchema),
   validateEditAdminMatchBody: runBodyValidation(editMatchBodySchema),
-  validateEndAdminMatchBody: runBodyValidation(endMatchBodySchema)
+  validateEndAdminMatchBody: runBodyValidation(endMatchBodySchema),
+  validateUpdateTournamentTimeBody: runBodyValidation(updateTournamentTimeBodySchema),
+  validateReviewTournamentRegistrationBody: runBodyValidation(reviewTournamentRegistrationBodySchema),
+  validateCloseTournamentRegistrationBody: runBodyValidation(closeTournamentRegistrationBodySchema),
+  validateOpenTournamentRegistrationBody: runBodyValidation(openTournamentRegistrationBodySchema),
+  validateIncreaseTournamentTimeBody: runBodyValidation(increaseTournamentTimeBodySchema),
+  validateStartTournamentBody: runBodyValidation(startTournamentBodySchema),
+  validateAssignTournamentMatchBody: runBodyValidation(assignTournamentMatchBodySchema)
 };

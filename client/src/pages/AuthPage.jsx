@@ -159,9 +159,8 @@ const AuthPage = () => {
         </form>
 
         <div className="demo-card">
-          <p className="section-kicker">Seeded test accounts</p>
-          <strong>Admin:</strong> admin@freefire.gg / admin123
-          <strong>Player:</strong> raistar@freefire.gg / player123
+          <p className="section-kicker">Security Notice</p>
+          <span>Use your own registered credentials. Demo accounts are disabled.</span>
         </div>
       </section>
     </div>

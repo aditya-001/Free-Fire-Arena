@@ -38,6 +38,18 @@ const getUpcomingTournaments = async (req, res, next) => {
   }
 };
 
+const getTournamentDetails = async (req, res, next) => {
+  try {
+    const tournament = await tournamentService.getTournamentDetails(req.params.id);
+    return sendSuccess(res, {
+      message: API_MESSAGES.TOURNAMENT_DETAILS_FETCHED,
+      data: tournament
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 const createTournament = async (req, res, next) => {
   try {
     const tournament = await tournamentService.createTournament(req.body, req.user._id, req.io);
@@ -75,11 +87,60 @@ const joinTournamentByBody = async (req, res, next) => {
   }
 };
 
+const registerTournament = async (req, res, next) => {
+  try {
+    const registration = await tournamentService.registerTournament(
+      req.body,
+      req.user._id,
+      req.file
+    );
+
+    return sendSuccess(res, {
+      statusCode: 201,
+      message: API_MESSAGES.TOURNAMENT_REGISTERED,
+      data: registration
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const createTournamentPaymentOrder = async (req, res, next) => {
+  try {
+    const order = await tournamentService.createTournamentPaymentOrder(req.body, req.user._id, req.io);
+
+    return sendSuccess(res, {
+      statusCode: 201,
+      message: API_MESSAGES.TOURNAMENT_PAYMENT_ORDER_CREATED,
+      data: order
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const verifyTournamentPayment = async (req, res, next) => {
+  try {
+    const result = await tournamentService.verifyTournamentPayment(req.body, req.user._id, req.io);
+
+    return sendSuccess(res, {
+      message: API_MESSAGES.TOURNAMENT_PAYMENT_VERIFIED,
+      data: result
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   getTournaments,
   getLiveTournaments,
   getUpcomingTournaments,
+  getTournamentDetails,
   createTournament,
   joinTournament,
-  joinTournamentByBody
+  joinTournamentByBody,
+  registerTournament,
+  createTournamentPaymentOrder,
+  verifyTournamentPayment
 };

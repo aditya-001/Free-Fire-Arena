@@ -129,7 +129,7 @@ const WalletPage = () => {
           key: orderData.keyId || import.meta.env.VITE_RAZORPAY_KEY_ID,
           amount: Math.round(Number(orderData.amount || 0) * 100),
           currency: orderData.currency || "INR",
-          name: "Free Fire Arena",
+          name: "EsportWeb Arena",
           description: "Wallet Top-up",
           order_id: orderData.orderId,
           handler: (response) => {

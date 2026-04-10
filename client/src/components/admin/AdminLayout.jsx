@@ -5,7 +5,8 @@ import { useAuth } from "../../contexts/AuthContext";
 
 const links = [
   { to: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/admin/tournaments", label: "Tournaments", icon: Trophy },
+  { to: "/admin/tournaments/control", label: "Tournament Control", icon: Trophy },
+  { to: "/admin/tournaments/manage", label: "Manage Tournaments", icon: ShieldAlert },
   { to: "/admin/matches/control", label: "Match Control", icon: Swords },
   { to: "/admin/matches/result-entry", label: "Result Entry", icon: Activity },
   { to: "/admin/matches/edit", label: "Edit Result", icon: ShieldAlert },

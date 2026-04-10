@@ -42,6 +42,10 @@ const ManageMatches = () => {
   const [endModal, setEndModal] = useState({ open: false, matchId: "" });
 
   const [saving, setSaving] = useState(false);
+  const getMatchLabel = (match) =>
+    match?.bracket?.roundLabel
+      ? `${match.bracket.roundLabel} ${match.bracket.matchOrder || ""}`.trim()
+      : `#${match.matchNumber}`;
 
   const fetchMatches = async (nextQuery = query) => {
     setLoading(true);
@@ -248,6 +252,7 @@ const ManageMatches = () => {
             className="rounded-lg border border-white/15 bg-white/[0.03] px-3 py-2 text-sm text-white"
           >
             <option value="">All statuses</option>
+            <option value="pending">Pending</option>
             <option value="live">Live</option>
             <option value="completed">Completed</option>
           </select>
@@ -285,7 +290,7 @@ const ManageMatches = () => {
 
               {matchesData.results.map((match) => (
                 <tr key={match._id} className="border-t border-white/8 transition hover:bg-fuchsia-500/[0.09]">
-                  <td className="px-4 py-3 font-medium text-white">#{match.matchNumber}</td>
+                  <td className="px-4 py-3 font-medium text-white">{getMatchLabel(match)}</td>
                   <td className="px-4 py-3 text-white/75">{match.tournamentTitle || "Unknown"}</td>
                   <td className="px-4 py-3 text-xs uppercase tracking-[0.12em] text-fuchsia-200">{match.status}</td>
                   <td className="px-4 py-3 text-white/75">{match.roomId || "Not set"}</td>

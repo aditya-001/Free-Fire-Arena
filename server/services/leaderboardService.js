@@ -6,6 +6,18 @@ const { TOURNAMENT_MODES } = require("../config/constants");
 
 const CACHE_TTL_MS = Number(process.env.LEADERBOARD_CACHE_TTL_MS || 15000);
 const leaderboardCache = new Map();
+const BR_RANK_POINTS = Object.freeze({
+  1: 12,
+  2: 9,
+  3: 8,
+  4: 7,
+  5: 6,
+  6: 5,
+  7: 4,
+  8: 3,
+  9: 2,
+  10: 1
+});
 
 const parsePositiveInt = (value, fallback, max = Number.MAX_SAFE_INTEGER) => {
   const parsed = Number.parseInt(value, 10);
@@ -31,6 +43,14 @@ const setCacheValue = (key, value) => {
     expiresAt: Date.now() + CACHE_TTL_MS
   });
 };
+
+const getBrRankPoints = (rank) => {
+  const safeRank = Number.parseInt(rank, 10);
+  if (!Number.isFinite(safeRank) || safeRank < 1) return 0;
+  return BR_RANK_POINTS[safeRank] || 0;
+};
+
+const getBrTeamPoints = (kills, rank) => Math.max(0, Number(kills || 0)) + getBrRankPoints(rank);
 
 const getLeaderboard = async ({ scope = "india", state, city, limit = 25 }) => {
   const safeLimit = parsePositiveInt(limit, 25, 100);
@@ -104,6 +124,7 @@ const getMatchLeaderboard = async (matchId) => {
         teamId: result.teamId?._id || result.teamId || null,
         teamCode: result.teamId?.teamId || null,
         totalKills: Number(result.totalKills ?? result.kills ?? 0),
+        points: getBrTeamPoints(result.totalKills ?? result.kills ?? 0, result.rank),
         booyah: Boolean(result.booyah),
         players: players.map((player) => ({
           playerId: player.userId?._id || player.userId || null,
@@ -203,12 +224,12 @@ const getTeamLeaderboard = async ({ mode = "BR", limit = 100 } = {}) => {
   const sortConfig =
     normalizedMode === "BR"
       ? {
-          "stats.modeStats.BR.booyah": -1,
+          "stats.modeStats.BR.points": -1,
           "stats.modeStats.BR.kills": -1,
           "stats.modeStats.BR.matchesPlayed": 1
         }
       : {
-          "stats.modeStats.CS.wins": -1,
+          "stats.modeStats.CS.points": -1,
           "stats.modeStats.CS.kills": -1,
           "stats.modeStats.CS.matchesPlayed": 1
         };
@@ -223,6 +244,7 @@ const getTeamLeaderboard = async ({ mode = "BR", limit = 100 } = {}) => {
     const modeStats = team.stats?.modeStats?.[normalizedMode] || {};
 
     const totalKills = Number(modeStats.kills ?? team.stats?.totalKills ?? 0);
+    const totalPoints = Number(modeStats.points ?? team.stats?.totalPoints ?? 0);
     const totalBooyah = Number(modeStats.booyah ?? team.stats?.totalBooyah ?? 0);
     const totalWins = Number(modeStats.wins ?? team.stats?.totalWins ?? 0);
     const matchesPlayed = Number(modeStats.matchesPlayed ?? team.stats?.matchesPlayed ?? 0);
@@ -231,6 +253,7 @@ const getTeamLeaderboard = async ({ mode = "BR", limit = 100 } = {}) => {
       teamId: team._id,
       name: team.name || "Unknown Team",
       totalKills,
+      totalPoints,
       totalBooyah,
       totalWins,
       matchesPlayed
@@ -243,7 +266,7 @@ const getTeamLeaderboard = async ({ mode = "BR", limit = 100 } = {}) => {
     results: leaderboard.map((entry, index) => ({
       rank: index + 1,
       ...entry,
-      priorityMetric: normalizedMode === "BR" ? entry.totalBooyah + entry.totalKills : entry.totalWins
+      priorityMetric: entry.totalPoints
     }))
   };
 

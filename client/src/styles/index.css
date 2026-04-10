@@ -250,7 +250,15 @@ a {
   width: 2.8rem;
   height: 2.8rem;
   border-radius: 1rem;
-  background: linear-gradient(135deg, rgba(245, 158, 11, 0.85), rgba(251, 191, 36, 0.2));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 16, 30, 0.7);
+  overflow: hidden;
+}
+
+.brand-icon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .brand-mark h1,
@@ -506,6 +514,24 @@ a {
   background: var(--accent-soft);
 }
 
+.pill--success {
+  border-color: rgba(16, 185, 129, 0.45);
+  background: rgba(16, 185, 129, 0.15);
+  color: #a7f3d0;
+}
+
+.pill--warning {
+  border-color: rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.16);
+  color: #fde68a;
+}
+
+.pill--danger {
+  border-color: rgba(244, 63, 94, 0.45);
+  background: rgba(244, 63, 94, 0.16);
+  color: #fecdd3;
+}
+
 .section-heading {
   justify-content: space-between;
   align-items: end;
@@ -550,6 +576,35 @@ a {
 .tournament-card__stats {
   display: grid;
   gap: 0.75rem;
+}
+
+.tournament-card__badge-row {
+  display: grid;
+  justify-items: end;
+  gap: 0.45rem;
+}
+
+.tournament-card__countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(14, 165, 233, 0.25);
+  background: rgba(14, 165, 233, 0.08);
+  color: #bae6fd;
+  font-size: 0.88rem;
+}
+
+.tournament-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.tournament-card__actions .text-button,
+.tournament-card__actions .cta-button {
+  flex: 1;
 }
 
 .tournament-card__stats div,
