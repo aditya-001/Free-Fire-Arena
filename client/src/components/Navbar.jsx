@@ -95,7 +95,7 @@ const Navbar = () => {
             </button>
           </>
         ) : (
-          <button className="cta-button cta-button--small" onClick={() => navigate("/auth")} type="button">
+          <button className="cta-button cta-button--small" onClick={() => navigate("/auth/login")} type="button">
             Login
           </button>
         )}

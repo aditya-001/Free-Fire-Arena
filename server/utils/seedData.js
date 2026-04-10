@@ -17,8 +17,9 @@ const seedInitialData = async () => {
       {
         username: "ArenaAdmin",
         email: "admin@freefire.gg",
+        phone: "9000000001",
         password: passwordHashes[0],
-        uid: "FF-ADMIN-001",
+        gameId: "FF-ADMIN-001",
         bio: "Hosting custom rooms, clan scrims and elite events.",
         skills: ["Strategist", "Coach"],
         achievements: ["Tournament Director", "Verified Host"],
@@ -38,8 +39,9 @@ const seedInitialData = async () => {
       {
         username: "RaistarX",
         email: "raistar@freefire.gg",
+        phone: "9000000002",
         password: passwordHashes[1],
-        uid: "FF-RAI-201",
+        gameId: "FF-RAI-201",
         bio: "Fast rushes, clutch revives and close-range domination.",
         skills: ["Rusher", "Clutch"],
         achievements: ["MVP", "Top Fragger"],
@@ -59,8 +61,9 @@ const seedInitialData = async () => {
       {
         username: "SniperNova",
         email: "nova@freefire.gg",
+        phone: "9000000003",
         password: passwordHashes[2],
-        uid: "FF-NOVA-335",
+        gameId: "FF-NOVA-335",
         bio: "Long-range specialist with calm zone control.",
         skills: ["Sniper", "IGL"],
         achievements: ["Sharp Shooter"],
@@ -79,8 +82,9 @@ const seedInitialData = async () => {
       {
         username: "ZoneHunter",
         email: "zone@freefire.gg",
+        phone: "9000000004",
         password: passwordHashes[3],
-        uid: "FF-ZONE-187",
+        gameId: "FF-ZONE-187",
         bio: "Mastering rotations, end-games and objective play.",
         skills: ["Support", "Zone Control"],
         achievements: ["Rotation King"],
@@ -113,29 +117,54 @@ const seedInitialData = async () => {
     const players = await User.find({ role: "user" }).limit(3);
 
     if (admin) {
+      const playerIds = players.map((player) => player._id);
+      const pairIds = playerIds.slice(0, 2);
+      const tailIds = playerIds.slice(1);
+      const now = Date.now();
+
       await Tournament.insertMany([
         {
-          name: "Booyah Night Showdown",
+          title: "Booyah Night Showdown",
+          game: "Free Fire",
           entryFee: 49,
           prizePool: 5000,
-          dateTime: new Date(Date.now() + 1000 * 60 * 60 * 24),
-          participants: players.slice(0, 2).map((player) => player._id),
+          maxPlayers: 48,
+          joinedPlayers: pairIds,
+          status: "upcoming",
+          startTime: new Date(now + 1000 * 60 * 60 * 24),
           createdBy: admin._id
         },
         {
-          name: "All India Squad Clash",
+          title: "All India Squad Clash",
+          game: "Free Fire",
           entryFee: 99,
           prizePool: 15000,
-          dateTime: new Date(Date.now() + 1000 * 60 * 60 * 48),
-          participants: players.map((player) => player._id),
+          maxPlayers: 60,
+          joinedPlayers: playerIds,
+          status: "live",
+          startTime: new Date(now - 1000 * 60 * 20),
           createdBy: admin._id
         },
         {
-          name: "City Solo Rush",
+          title: "City Solo Rush",
+          game: "Free Fire",
           entryFee: 29,
           prizePool: 2500,
-          dateTime: new Date(Date.now() + 1000 * 60 * 60 * 72),
-          participants: players.slice(1).map((player) => player._id),
+          maxPlayers: 40,
+          joinedPlayers: tailIds,
+          status: "upcoming",
+          startTime: new Date(now + 1000 * 60 * 60 * 72),
+          createdBy: admin._id
+        },
+        {
+          title: "Weekend Knockout Finals",
+          game: "Free Fire",
+          entryFee: 59,
+          prizePool: 8000,
+          maxPlayers: 50,
+          joinedPlayers: playerIds,
+          status: "completed",
+          startTime: new Date(now - 1000 * 60 * 60 * 6),
           createdBy: admin._id
         }
       ]);

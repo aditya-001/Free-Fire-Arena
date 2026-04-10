@@ -6,7 +6,8 @@ const serializeAuthUser = (user) => ({
   _id: user._id,
   username: user.username,
   email: user.email,
-  uid: user.uid,
+  phone: user.phone,
+  gameId: user.gameId,
   bio: user.bio,
   profileImage: user.profileImage,
   skills: user.skills,
@@ -19,9 +20,9 @@ const serializeAuthUser = (user) => ({
 });
 
 const registerUser = async (req, res) => {
-  const { username, email, password, uid, state, city } = req.body;
+  const { username, email, phone, password, gameId, state, city } = req.body;
 
-  if (!username || !email || !password || !uid) {
+  if (!username || !email || !phone || !password || !gameId) {
     return res.status(400).json({ message: "Please fill all required fields" });
   }
 
@@ -30,11 +31,11 @@ const registerUser = async (req, res) => {
   }
 
   const existingUser = await User.findOne({
-    $or: [{ email: email.toLowerCase() }, { uid }]
+    $or: [{ email: email.toLowerCase() }, { gameId }, { phone }, { username }]
   });
 
   if (existingUser) {
-    return res.status(409).json({ message: "Email or UID already exists" });
+    return res.status(409).json({ message: "Email, Phone, gameId or Username already exists" });
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
@@ -42,11 +43,12 @@ const registerUser = async (req, res) => {
   const user = await User.create({
     username,
     email,
+    phone,
     password: hashedPassword,
-    uid,
+    gameId,
     location: {
-      state: state || "Uttar Pradesh",
-      city: city || "Mathura"
+      state: state || "State",
+      city: city || "City"
     },
     notifications: [
       {
@@ -63,13 +65,21 @@ const registerUser = async (req, res) => {
 };
 
 const loginUser = async (req, res) => {
-  const { email, password } = req.body;
+  const { identifier, password } = req.body;
 
-  if (!email || !password) {
-    return res.status(400).json({ message: "Email and password are required" });
+  if (!identifier || !password) {
+    return res.status(400).json({ message: "Identifier and password are required" });
   }
 
-  const user = await User.findOne({ email: email.toLowerCase() });
+  // Find user by email, phone, username, or gameId
+  const user = await User.findOne({
+    $or: [
+      { email: identifier.toLowerCase() },
+      { phone: identifier },
+      { username: identifier },
+      { gameId: identifier }
+    ]
+  });
 
   if (!user) {
     return res.status(401).json({ message: "Invalid credentials" });
@@ -87,4 +97,68 @@ const loginUser = async (req, res) => {
   });
 };
 
-module.exports = { registerUser, loginUser };
+const adminRegister = async (req, res) => {
+  const { username, email, phone, password, adminKey } = req.body;
+
+  if (adminKey !== process.env.ADMIN_SECRET_KEY) {
+    return res.status(403).json({ message: "Invalid secure admin key" });
+  }
+
+  const existingUser = await User.findOne({
+    $or: [{ email: email.toLowerCase() }, { username }, { phone }]
+  });
+
+  if (existingUser) {
+    return res.status(409).json({ message: "Admin details already used" });
+  }
+
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  const admin = await User.create({
+    username,
+    email,
+    phone,
+    gameId: `ADMIN-${Date.now()}`,
+    password: hashedPassword,
+    role: "admin"
+  });
+
+  return res.status(201).json({
+    token: generateToken(admin._id),
+    user: serializeAuthUser(admin)
+  });
+};
+
+const adminLogin = async (req, res) => {
+  const { adminId, password } = req.body;
+
+  if (!adminId || !password) {
+    return res.status(400).json({ message: "Admin Identifier and passcode are required" });
+  }
+
+  const admin = await User.findOne({
+    role: "admin",
+    $or: [
+      { username: adminId },
+      { email: adminId.toLowerCase() },
+      { gameId: adminId }
+    ]
+  });
+
+  if (!admin) {
+    return res.status(401).json({ message: "UNAUTHORIZED: Admin not found" });
+  }
+
+  const passwordMatch = await bcrypt.compare(password, admin.password);
+
+  if (!passwordMatch) {
+    return res.status(401).json({ message: "UNAUTHORIZED: Incorrect passcode" });
+  }
+
+  return res.json({
+    token: generateToken(admin._id),
+    user: serializeAuthUser(admin)
+  });
+};
+
+module.exports = { registerUser, loginUser, adminRegister, adminLogin };

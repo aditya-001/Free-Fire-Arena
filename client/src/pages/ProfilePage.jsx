@@ -1,183 +1,130 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import toast from "react-hot-toast";
-import api, { resolveAsset } from "../api/axiosInstance";
-import ChatPanel from "../components/ChatPanel";
+import { useNavigate } from "react-router-dom";
+import api from "../api/axiosInstance";
 import LoadingSpinner from "../components/LoadingSpinner";
-import NotificationsPanel from "../components/NotificationsPanel";
-import SearchPlayers from "../components/SearchPlayers";
+import LiveMatch from "../components/dashboard/LiveMatch";
+import MyTournaments from "../components/dashboard/MyTournaments";
+import Notifications from "../components/dashboard/Notifications";
+import ProfileCard from "../components/dashboard/ProfileCard";
+import StatsCard from "../components/dashboard/StatsCard";
+import WalletCard from "../components/dashboard/WalletCard";
 import { useAuth } from "../contexts/AuthContext";
-import { useSocket } from "../contexts/SocketContext";
-import { formatDateTime } from "../utils/formatters";
+
+const resolveRankTier = (wins) => {
+  if (wins >= 30) return "Gold";
+  if (wins >= 12) return "Silver";
+  return "Bronze";
+};
+
+const isJoinedByUser = (tournament, userId) => {
+  const players = tournament?.joinedPlayers || tournament?.participants || [];
+  return players.some((participant) => {
+    const id = participant?._id || participant;
+    return String(id) === String(userId);
+  });
+};
+
+const isLiveTournament = (tournament) => {
+  if (tournament?.status === "live") return true;
+
+  const startAt = tournament?.startTime || tournament?.dateTime;
+  if (!startAt) return false;
+
+  const value = new Date(startAt).getTime();
+  if (Number.isNaN(value)) return false;
+
+  return Math.abs(value - Date.now()) <= 1000 * 60 * 30;
+};
 
 const ProfilePage = () => {
-  const { user, setUser, refreshProfile } = useAuth();
-  const { socket } = useSocket();
+  const { user, refreshProfile } = useAuth();
   const [profileLoading, setProfileLoading] = useState(true);
+  const [joinedTournaments, setJoinedTournaments] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [players, setPlayers] = useState([]);
-  const [selectedChatUser, setSelectedChatUser] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [messageText, setMessageText] = useState("");
-  const [profileFile, setProfileFile] = useState(null);
-  const [formData, setFormData] = useState({
-    username: "",
-    bio: "",
-    uid: "",
-    skills: "",
-    achievements: "",
-    state: "",
-    city: ""
-  });
+  const navigate = useNavigate();
 
-  const followingIds = user?.following?.map((player) => player._id || player) || [];
+  const loadDashboard = async () => {
+    try {
+      const [freshProfile, notificationsResponse, tournamentsResponse] = await Promise.all([
+        refreshProfile(),
+        api.get("/users/me/notifications"),
+        api.get("/tournaments")
+      ]);
 
-  const loadNotifications = async () => {
-    const { data } = await api.get("/users/me/notifications");
-    setNotifications(data);
-  };
+      const activeUser = freshProfile || user;
+      const activeUserId = activeUser?._id || user?._id;
+      const allTournaments = Array.isArray(tournamentsResponse.data) ? tournamentsResponse.data : [];
 
-  const loadPlayers = async (query = "") => {
-    const { data } = await api.get("/users/search", { params: { q: query } });
-    setPlayers(data);
-  };
-
-  const loadConversation = async (playerId) => {
-    const { data } = await api.get(`/messages/${playerId}`);
-    setMessages(data);
+      setNotifications(Array.isArray(notificationsResponse.data) ? notificationsResponse.data : []);
+      setJoinedTournaments(allTournaments.filter((tournament) => isJoinedByUser(tournament, activeUserId)));
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Unable to load your dashboard");
+    } finally {
+      setProfileLoading(false);
+    }
   };
 
   useEffect(() => {
-    const hydratePage = async () => {
-      try {
-        const freshProfile = await refreshProfile();
-        if (freshProfile) {
-          setFormData({
-            username: freshProfile.username || "",
-            bio: freshProfile.bio || "",
-            uid: freshProfile.uid || "",
-            skills: freshProfile.skills?.join(", ") || "",
-            achievements: freshProfile.achievements?.join(", ") || "",
-            state: freshProfile.location?.state || "",
-            city: freshProfile.location?.city || ""
-          });
-        }
-        await Promise.all([loadNotifications(), loadPlayers()]);
-      } catch (error) {
-        toast.error("Unable to load your profile");
-      } finally {
-        setProfileLoading(false);
-      }
-    };
-
-    hydratePage();
+    loadDashboard();
   }, []);
 
-  useEffect(() => {
-    const timeout = setTimeout(() => {
-      loadPlayers(searchTerm).catch(() => {
-        toast.error("Unable to search players");
-      });
-    }, 250);
+  const rankTier = useMemo(() => resolveRankTier(Number(user?.stats?.wins || 0)), [user?.stats?.wins]);
 
-    return () => clearTimeout(timeout);
-  }, [searchTerm]);
+  const walletSummary = useMemo(() => {
+    const unread = notifications.filter((notification) => !notification?.read).length;
+    const live = joinedTournaments.filter((tournament) => isLiveTournament(tournament)).length;
 
-  useEffect(() => {
-    if (!socket || !user) return undefined;
-
-    const handleIncomingMessage = (incomingMessage) => {
-      const senderId = incomingMessage.sender?._id || incomingMessage.sender;
-      const receiverId = incomingMessage.receiver?._id || incomingMessage.receiver;
-      const isMine = senderId === user._id || receiverId === user._id;
-
-      if (!isMine) return;
-
-      // Only append to the open thread when the incoming message belongs to it.
-      if (
-        selectedChatUser &&
-        [senderId, receiverId].includes(selectedChatUser._id) &&
-        [senderId, receiverId].includes(user._id)
-      ) {
-        setMessages((current) => [...current, incomingMessage]);
-      }
+    return {
+      joined: joinedTournaments.length,
+      live,
+      unread
     };
+  }, [joinedTournaments, notifications]);
 
-    socket.on("new_message", handleIncomingMessage);
+  const liveMatch = useMemo(() => {
+    const explicitLive = joinedTournaments.find((tournament) => tournament?.status === "live");
+    if (explicitLive) return explicitLive;
 
-    return () => {
-      socket.off("new_message", handleIncomingMessage);
-    };
-  }, [socket, user, selectedChatUser]);
+    return joinedTournaments.find((tournament) => isLiveTournament(tournament)) || null;
+  }, [joinedTournaments]);
 
-  const handleStartChat = async (player) => {
-    setSelectedChatUser(player);
-    await loadConversation(player._id);
-  };
+  const stats = useMemo(() => {
+    const matches = Number(user?.stats?.matchesPlayed ?? user?.stats?.matches ?? 0);
+    const wins = Number(user?.stats?.wins || 0);
+    const kills = Number(user?.stats?.kills || 0);
+    const winRate = matches > 0 ? Number(((wins / matches) * 100).toFixed(1)) : 0;
 
-  const handleProfileUpdate = async (event) => {
-    event.preventDefault();
-
-    try {
-      const payload = new FormData();
-      Object.entries(formData).forEach(([key, value]) => payload.append(key, value));
-      if (profileFile) payload.append("profileImage", profileFile);
-
-      const { data } = await api.put("/users/me", payload, {
-        headers: { "Content-Type": "multipart/form-data" }
-      });
-
-      setUser(data);
-      setFormData({
-        username: data.username || "",
-        bio: data.bio || "",
-        uid: data.uid || "",
-        skills: data.skills?.join(", ") || "",
-        achievements: data.achievements?.join(", ") || "",
-        state: data.location?.state || "",
-        city: data.location?.city || ""
-      });
-      setProfileFile(null);
-      toast.success("Profile updated");
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Unable to update profile");
-    }
-  };
-
-  const handleToggleFollow = async (playerId) => {
-    try {
-      await api.post(`/users/${playerId}/follow`);
-      const refreshedProfile = await refreshProfile();
-      await loadPlayers(searchTerm);
-      if (refreshedProfile) setUser(refreshedProfile);
-      toast.success("Follow status updated");
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Unable to update follow status");
-    }
-  };
-
-  const handleSendMessage = async (event) => {
-    event.preventDefault();
-
-    if (!socket || !selectedChatUser || !messageText.trim()) {
-      return;
-    }
-
-    socket.emit("private_message", {
-      receiverId: selectedChatUser._id,
-      content: messageText.trim()
-    });
-    setMessageText("");
-  };
+    return { matches, wins, kills, winRate };
+  }, [user?.stats]);
 
   const handleMarkRead = async () => {
     try {
       await api.patch("/users/me/notifications");
-      await loadNotifications();
+      setNotifications((current) =>
+        current.map((notification) => ({ ...notification, read: true }))
+      );
       toast.success("Notifications marked as read");
     } catch (error) {
-      toast.error("Unable to update notifications");
+      toast.error(error.response?.data?.message || "Unable to mark notifications");
     }
+  };
+
+  const handleEditProfile = () => {
+    toast("Profile editor upgrade in progress", { icon: "🎯" });
+  };
+
+  const handleAddMoney = () => {
+    toast("Wallet top-up flow will open here", { icon: "💰" });
+  };
+
+  const handleWithdraw = () => {
+    toast("Withdraw flow will open here", { icon: "🏧" });
+  };
+
+  const handleViewTournament = () => {
+    navigate("/tournaments");
   };
 
   if (profileLoading || !user) {
@@ -185,190 +132,38 @@ const ProfilePage = () => {
   }
 
   return (
-    <div className="page-content">
-      <section className="profile-grid section-spacing">
-        <div className="glass-card profile-hero">
-          <div className="profile-hero__top">
-            {user.profileImage ? (
-              <img alt={user.username} className="profile-avatar" src={resolveAsset(user.profileImage)} />
-            ) : (
-              <div className="profile-avatar profile-avatar--fallback">{user.username.slice(0, 1)}</div>
-            )}
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.4 }}
+      className="space-y-6"
+    >
+      <section className="grid gap-6 xl:grid-cols-[1.4fr_0.6fr]">
+        <ProfileCard user={user} rankTier={rankTier} onEditProfile={handleEditProfile} />
+        <WalletCard
+          balance={Number(user?.walletBalance || 0)}
+          summary={walletSummary}
+          onAddMoney={handleAddMoney}
+          onWithdraw={handleWithdraw}
+        />
+      </section>
 
-            <div>
-              <p className="section-kicker">Player profile</p>
-              <h2>{user.username}</h2>
-              <p className="hero-copy__body">{user.bio}</p>
-              <div className="profile-meta">
-                <span className="pill">{user.uid}</span>
-                <span className="pill">
-                  {user.location?.city}, {user.location?.state}
-                </span>
-                <span className="pill">{user.role === "admin" ? "Admin Host" : "Competitor"}</span>
-              </div>
-            </div>
-          </div>
+      <LiveMatch liveMatch={liveMatch} />
 
-          <div className="profile-stats">
-            <div>
-              <strong>{user.followers?.length || 0}</strong>
-              <span>Followers</span>
-            </div>
-            <div>
-              <strong>{user.following?.length || 0}</strong>
-              <span>Following</span>
-            </div>
-            <div>
-              <strong>{user.stats?.points || 0}</strong>
-              <span>Points</span>
-            </div>
-            <div>
-              <strong>{user.stats?.wins || 0}</strong>
-              <span>Wins</span>
-            </div>
-          </div>
+      <section className="grid gap-6 xl:grid-cols-[1.45fr_0.55fr]">
+        <MyTournaments tournaments={joinedTournaments} onViewDetails={handleViewTournament} />
 
-          <div className="tag-row">
-            {user.skills?.map((skill) => (
-              <span key={skill} className="skill-tag">
-                {skill}
-              </span>
-            ))}
-          </div>
-
-          <div className="achievement-list">
-            {user.achievements?.map((achievement) => (
-              <span key={achievement} className="pill pill--accent">
-                {achievement}
-              </span>
-            ))}
-          </div>
+        <div className="space-y-6">
+          <StatsCard
+            matches={stats.matches}
+            wins={stats.wins}
+            kills={stats.kills}
+            winRate={stats.winRate}
+          />
+          <Notifications notifications={notifications} onMarkRead={handleMarkRead} />
         </div>
-
-        <form className="glass-card profile-form" onSubmit={handleProfileUpdate}>
-          <div className="panel-section__header">
-            <div>
-              <p className="section-kicker">Edit profile</p>
-              <h3>Update your player card</h3>
-            </div>
-          </div>
-
-          <div className="field-group">
-            <label>Profile image</label>
-            <input accept="image/*" onChange={(event) => setProfileFile(event.target.files?.[0] || null)} type="file" />
-          </div>
-
-          <div className="field-grid">
-            <div className="field-group">
-              <label>Username</label>
-              <input value={formData.username} onChange={(event) => setFormData((current) => ({ ...current, username: event.target.value }))} />
-            </div>
-            <div className="field-group">
-              <label>Free Fire UID</label>
-              <input value={formData.uid} onChange={(event) => setFormData((current) => ({ ...current, uid: event.target.value }))} />
-            </div>
-          </div>
-
-          <div className="field-group">
-            <label>Bio</label>
-            <textarea
-              rows="3"
-              value={formData.bio}
-              onChange={(event) => setFormData((current) => ({ ...current, bio: event.target.value }))}
-            />
-          </div>
-
-          <div className="field-grid">
-            <div className="field-group">
-              <label>Skills</label>
-              <input
-                placeholder="Sniper, Rusher"
-                value={formData.skills}
-                onChange={(event) => setFormData((current) => ({ ...current, skills: event.target.value }))}
-              />
-            </div>
-            <div className="field-group">
-              <label>Achievements</label>
-              <input
-                placeholder="MVP, Top Fragger"
-                value={formData.achievements}
-                onChange={(event) =>
-                  setFormData((current) => ({ ...current, achievements: event.target.value }))
-                }
-              />
-            </div>
-          </div>
-
-          <div className="field-grid">
-            <div className="field-group">
-              <label>State</label>
-              <input value={formData.state} onChange={(event) => setFormData((current) => ({ ...current, state: event.target.value }))} />
-            </div>
-            <div className="field-group">
-              <label>City</label>
-              <input value={formData.city} onChange={(event) => setFormData((current) => ({ ...current, city: event.target.value }))} />
-            </div>
-          </div>
-
-          <button className="cta-button" type="submit">
-            Edit Profile
-          </button>
-        </form>
       </section>
-
-      <section className="dashboard-grid section-spacing">
-        <NotificationsPanel notifications={notifications} onMarkRead={handleMarkRead} />
-        <SearchPlayers
-          currentUserId={user._id}
-          followingIds={followingIds}
-          onSearchChange={setSearchTerm}
-          onStartChat={handleStartChat}
-          onToggleFollow={handleToggleFollow}
-          players={players}
-          searchTerm={searchTerm}
-        />
-      </section>
-
-      <section className="dashboard-grid section-spacing dashboard-grid--chat">
-        <ChatPanel
-          currentUserId={user._id}
-          messageText={messageText}
-          messages={messages}
-          onMessageChange={setMessageText}
-          onSend={handleSendMessage}
-          selectedUser={selectedChatUser}
-        />
-
-        <section className="glass-card panel-section">
-          <div className="panel-section__header">
-            <div>
-              <p className="section-kicker">Match history</p>
-              <h3>Recent performances</h3>
-            </div>
-          </div>
-
-          <div className="history-list">
-            {user.matchHistory?.length ? (
-              user.matchHistory.map((match, index) => (
-                <article key={`${match.matchName}-${index}`} className="history-item">
-                  <div>
-                    <strong>{match.matchName}</strong>
-                    <p>{formatDateTime(match.playedAt)}</p>
-                  </div>
-                  <div className="history-item__stats">
-                    <span>#{match.placement}</span>
-                    <span>{match.kills} kills</span>
-                    <span>{match.points} pts</span>
-                  </div>
-                </article>
-              ))
-            ) : (
-              <p className="muted-copy">No matches logged yet.</p>
-            )}
-          </div>
-        </section>
-      </section>
-    </div>
+    </motion.div>
   );
 };
 

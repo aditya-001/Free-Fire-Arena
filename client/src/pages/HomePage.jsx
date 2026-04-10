@@ -1,17 +1,21 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowRight, ShieldCheck, Sparkles, Trophy, Users } from "lucide-react";
+import toast from "react-hot-toast";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosInstance";
-import TournamentCard from "../components/TournamentCard";
 import LoadingSpinner from "../components/LoadingSpinner";
+import HeroSection from "../components/home/HeroSection";
+import LiveTournaments from "../components/home/LiveTournaments";
+import UpcomingTournaments from "../components/home/UpcomingTournaments";
+import StatsSection from "../components/home/StatsSection";
+import TopPlayers from "../components/home/TopPlayers";
 import { useAuth } from "../contexts/AuthContext";
 
 const HomePage = () => {
-  const [upcomingTournaments, setUpcomingTournaments] = useState([]);
+  const [tournaments, setTournaments] = useState([]);
   const [leaderboard, setLeaderboard] = useState([]);
   const [loading, setLoading] = useState(true);
-  const previewRef = useRef(null);
+  const sectionRef = useRef(null);
   const navigate = useNavigate();
   const { user } = useAuth();
 
@@ -19,14 +23,14 @@ const HomePage = () => {
     const fetchHomeData = async () => {
       try {
         const [tournamentResponse, leaderboardResponse] = await Promise.all([
-          api.get("/tournaments", { params: { upcoming: true, limit: 3 } }),
-          api.get("/leaderboard", { params: { scope: "india", limit: 3 } })
+          api.get("/tournaments", { params: { limit: 12 } }),
+          api.get("/leaderboard", { params: { scope: "india", limit: 10 } })
         ]);
 
-        setUpcomingTournaments(tournamentResponse.data);
-        setLeaderboard(leaderboardResponse.data.results);
+        setTournaments(Array.isArray(tournamentResponse.data) ? tournamentResponse.data : []);
+        setLeaderboard(Array.isArray(leaderboardResponse.data?.results) ? leaderboardResponse.data.results : []);
       } catch (error) {
-        console.error(error);
+        toast.error(error.response?.data?.message || "Unable to load homepage right now");
       } finally {
         setLoading(false);
       }
@@ -35,143 +39,86 @@ const HomePage = () => {
     fetchHomeData();
   }, []);
 
+  const parseDateValue = (entry) => {
+    const raw = entry?.startTime || entry?.dateTime;
+    const value = raw ? new Date(raw).getTime() : Number.NaN;
+    return Number.isNaN(value) ? null : value;
+  };
+
+  const featuredLive = useMemo(() => {
+    const now = Date.now();
+    const explicitLive = tournaments.find((item) => item?.status === "live");
+    if (explicitLive) return explicitLive;
+
+    const nearStart = tournaments.find((item) => {
+      const value = parseDateValue(item);
+      if (!value) return false;
+      return Math.abs(value - now) <= 1000 * 60 * 60;
+    });
+
+    return nearStart || tournaments[0] || null;
+  }, [tournaments]);
+
+  const stats = useMemo(() => {
+    const uniquePlayers = new Set();
+
+    tournaments.forEach((tournament) => {
+      const list = tournament?.joinedPlayers || tournament?.participants || [];
+      list.forEach((player) => {
+        if (player?._id) {
+          uniquePlayers.add(player._id);
+        } else if (player) {
+          uniquePlayers.add(String(player));
+        }
+      });
+    });
+
+    const totalMatches =
+      leaderboard.reduce((sum, player) => sum + Number(player?.matches ?? player?.matchesPlayed ?? 0), 0) ||
+      tournaments.length * 12;
+
+    const totalPrize = tournaments.reduce((sum, tournament) => sum + Number(tournament?.prizePool || 0), 0);
+
+    return {
+      totalPlayers: Math.max(uniquePlayers.size, leaderboard.length),
+      totalMatches,
+      totalPrize
+    };
+  }, [leaderboard, tournaments]);
+
+  const handleJoinNow = () => {
+    sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const handleJoinTournament = () => {
+    navigate(user ? "/tournaments" : "/auth/login");
+  };
+
   if (loading) {
     return <LoadingSpinner label="Loading battle lobby..." fullscreen />;
   }
 
   return (
-    <div className="page-content">
-      <section className="hero-grid section-spacing">
-        <motion.div
-          className="hero-copy"
-          initial={{ opacity: 0, y: 24 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.45 }}
-        >
-          <p className="section-kicker">Custom Rooms. Fast Joins. Real-Time Action.</p>
-          <h2>Host and join Free Fire tournaments with a full-screen competitive vibe.</h2>
-          <p className="hero-copy__body">
-            Build your profile, register for upcoming rooms, chat with players and climb the live
-            leaderboard across India, your state and your city.
-          </p>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.45 }}
+      className="space-y-10"
+    >
+      <HeroSection
+        liveTournament={featuredLive}
+        onJoinNow={handleJoinNow}
+        onJoinLive={handleJoinTournament}
+      />
 
-          <div className="hero-actions">
-            <button className="cta-button" onClick={() => previewRef.current?.scrollIntoView({ behavior: "smooth" })} type="button">
-              Join Now <ArrowRight size={18} />
-            </button>
-            <button className="text-button text-button--large" onClick={() => navigate("/tournaments")} type="button">
-              Explore tournaments
-            </button>
-          </div>
+      <div ref={sectionRef} className="space-y-10">
+        <LiveTournaments tournaments={tournaments} onJoin={handleJoinTournament} />
+        <UpcomingTournaments tournaments={tournaments} onJoin={handleJoinTournament} />
+      </div>
 
-          <div className="stat-grid">
-            <article className="glass-card stat-card">
-              <ShieldCheck size={20} />
-              <strong>JWT secured login</strong>
-              <span>Fast protected access for players and admins.</span>
-            </article>
-            <article className="glass-card stat-card">
-              <Users size={20} />
-              <strong>Real-time player chat</strong>
-              <span>Private Socket.IO chat built into your profile dashboard.</span>
-            </article>
-            <article className="glass-card stat-card">
-              <Sparkles size={20} />
-              <strong>Mobile-first layout</strong>
-              <span>Responsive, smooth, full-screen UI with theme switching.</span>
-            </article>
-          </div>
-        </motion.div>
-
-        <motion.div
-          className="glass-card hero-banner"
-          initial={{ opacity: 0, scale: 0.96 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.45, delay: 0.1 }}
-        >
-          <div className="hero-banner__top">
-            <span className="pill">Default theme: Dark</span>
-            <span className="pill pill--accent">{user ? `Welcome, ${user.username}` : "Open for new players"}</span>
-          </div>
-          <div>
-            <p className="section-kicker">Tonight's highlights</p>
-            <h3>Booyah Night Showdown starts with live updates and fast joins.</h3>
-          </div>
-          <div className="hero-banner__list">
-            <div>
-              <span>Prize Pool</span>
-              <strong>₹15,000+</strong>
-            </div>
-            <div>
-              <span>Leaderboard</span>
-              <strong>India / State / City</strong>
-            </div>
-            <div>
-              <span>Player Tools</span>
-              <strong>Follow, chat, notify</strong>
-            </div>
-          </div>
-          <button className="text-button text-button--large" onClick={() => navigate("/profile")} type="button">
-            Open profile dashboard
-          </button>
-        </motion.div>
-      </section>
-
-      <section className="section-spacing" ref={previewRef}>
-        <div className="section-heading">
-          <div>
-            <p className="section-kicker">Upcoming tournaments</p>
-            <h2>Jump into the next room before slots fill up.</h2>
-          </div>
-          <button className="text-button text-button--large" onClick={() => navigate("/tournaments")} type="button">
-            View all
-          </button>
-        </div>
-
-        <div className="card-grid">
-          {upcomingTournaments.map((tournament) => (
-            <TournamentCard
-              key={tournament._id}
-              canJoin={Boolean(user)}
-              compact
-              joinDisabled={tournament.participants?.some((participant) => participant._id === user?._id)}
-              onJoin={() => navigate(user ? "/tournaments" : "/auth")}
-              tournament={tournament}
-            />
-          ))}
-        </div>
-      </section>
-
-      <section className="section-spacing">
-        <div className="section-heading">
-          <div>
-            <p className="section-kicker">National leaders</p>
-            <h2>Quick glance at the current top fraggers.</h2>
-          </div>
-          <button className="text-button text-button--large" onClick={() => navigate("/leaderboard?scope=india")} type="button">
-            Full leaderboard
-          </button>
-        </div>
-
-        <div className="leader-grid">
-          {leaderboard.map((player) => (
-            <article key={player._id} className="glass-card leader-card">
-              <div className="leader-card__rank">
-                <Trophy size={18} />
-                <span>#{player.rank}</span>
-              </div>
-              <h3>{player.playerName}</h3>
-              <p>{player.uid}</p>
-              <div className="leader-card__meta">
-                <span>{player.points} pts</span>
-                <span>{player.wins} wins</span>
-                <span>{player.city}</span>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-    </div>
+      <StatsSection stats={stats} />
+      <TopPlayers players={leaderboard} />
+    </motion.div>
   );
 };
 

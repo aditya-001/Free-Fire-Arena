@@ -57,8 +57,10 @@ export const AuthProvider = ({ children }) => {
         loading,
         setUser,
         refreshProfile: hydrateUser,
-        login: (payload) => authAction("/auth/login", payload, "Welcome back to the arena"),
-        register: (payload) => authAction("/auth/register", payload, "Account created successfully"),
+        login: (payload) => authAction("/auth/login", payload, "Welcome back to the arena!"),
+        register: (payload) => authAction("/auth/register", payload, "Account created successfully!"),
+        adminLogin: (payload) => authAction("/auth/admin-login", payload, "ACCESS GRANTED: Command Center Active"),
+        adminRegister: (payload) => authAction("/auth/admin-register", payload, "Admin Profile Indexed Successfully"),
         logout
       }}
     >

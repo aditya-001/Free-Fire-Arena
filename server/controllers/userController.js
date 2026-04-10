@@ -23,9 +23,12 @@ const serializeProfile = (user) => ({
   _id: user._id,
   username: user.username,
   email: user.email,
+  phone: user.phone,
   bio: user.bio,
   profileImage: user.profileImage,
-  uid: user.uid,
+  gameId: user.gameId || user.uid,
+  uid: user.gameId || user.uid,
+  walletBalance: user.walletBalance ?? 0,
   skills: user.skills,
   followers: user.followers,
   following: user.following,
@@ -41,8 +44,8 @@ const serializeProfile = (user) => ({
 const getCurrentUser = async (req, res) => {
   const user = await User.findById(req.user._id)
     .select("-password")
-    .populate("followers", "username uid profileImage")
-    .populate("following", "username uid profileImage");
+    .populate("followers", "username gameId profileImage")
+    .populate("following", "username gameId profileImage");
 
   return res.json(serializeProfile(user));
 };
@@ -54,11 +57,11 @@ const updateProfile = async (req, res) => {
     return res.status(404).json({ message: "User not found" });
   }
 
-  const { username, bio, uid, skills, achievements, state, city } = req.body;
+  const { username, bio, gameId, uid, skills, achievements, state, city } = req.body;
 
   if (username) user.username = username;
   if (bio !== undefined) user.bio = bio;
-  if (uid) user.uid = uid;
+  if (gameId || uid) user.gameId = gameId || uid;
   if (skills !== undefined) user.skills = parseArrayInput(skills);
   if (achievements !== undefined) user.achievements = parseArrayInput(achievements);
   if (state) user.location.state = state;
@@ -69,8 +72,8 @@ const updateProfile = async (req, res) => {
 
   const updatedUser = await User.findById(user._id)
     .select("-password")
-    .populate("followers", "username uid profileImage")
-    .populate("following", "username uid profileImage");
+    .populate("followers", "username gameId profileImage")
+    .populate("following", "username gameId profileImage");
 
   return res.json(serializeProfile(updatedUser));
 };
@@ -81,10 +84,11 @@ const searchPlayers = async (req, res) => {
   const users = await User.find({
     $or: [
       { username: { $regex: query, $options: "i" } },
+      { gameId: { $regex: query, $options: "i" } },
       { uid: { $regex: query, $options: "i" } }
     ]
   })
-    .select("username uid bio profileImage skills followers following location stats")
+    .select("username gameId bio profileImage skills followers following location stats")
     .limit(12);
 
   return res.json(users);
@@ -128,8 +132,8 @@ const toggleFollow = async (req, res) => {
 const getUserById = async (req, res) => {
   const user = await User.findById(req.params.id)
     .select("-password")
-    .populate("followers", "username uid profileImage")
-    .populate("following", "username uid profileImage");
+    .populate("followers", "username gameId profileImage")
+    .populate("following", "username gameId profileImage");
 
   if (!user) {
     return res.status(404).json({ message: "Player not found" });
